@@ -225,6 +225,9 @@ struct matrix {
     for (auto i : range(3)) result(i,i) = p[i];
     return result;
   }
+
+  #undef near
+  #undef far
   
   static inline auto make_perspective(float fovY, float aspect, float near, float far) {
     float ct = 1.0f / std::tan(fovY / 2.0f);

@@ -1,12 +1,17 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <cassert>
 #include <cmath>
 
 #include <array>
 #include <string>
+#include <variant>
 #include <concepts>
 #include <type_traits>
+#include <functional>
 
 namespace cpa {
 
