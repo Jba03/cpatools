@@ -467,6 +467,9 @@ struct stTransform {
   };
   
   stTransform() = default;
+  stTransform(uint32 _type, stMatrix4D T = stMatrix4D(), stVector4D _scale = stVector4D(1.0f, 1.0f, 1.0f, 1.0f)) : type(_type), matrix(T), scale(_scale) {
+    /* ... */
+  }
   
   /** transform type */
   uint32 type = 0;
@@ -489,10 +492,26 @@ struct stTransform {
     }
   }
   
-  /** transform x stVector3D -> stVector3D */
-  stVector3D operator * (stVector3D v);
-  /** transform x stVector4D -> stVector4D */
-  stVector4D operator * (stVector4D v);
+  auto operator * (stVector3D v) -> stVector3D {
+    return (matrix * stVector4D(v.x, v.y, v.z, 1.0f)).xyz();
+  }
+  
+  auto operator * (stVector4D v) -> stVector4D {
+    return matrix * v;
+  }
+  
+  auto operator * (stTransform other) -> stTransform {
+    // TODO: Also transform the scale here?
+    stTransform T(type, matrix * other.matrix, scale);
+    return T;
+  }
+  
+  auto inverse() -> stTransform {
+    // TODO: Also transform the scale here?
+    stTransform T(type, matrix.inverse(), scale);
+    return T;
+  }
+  
   
   inline auto typeName() -> std::string {
     switch (static_cast<Type>(uint32_t(type))) {
@@ -1441,7 +1460,7 @@ struct stGVForCollision {
   pointer<stVector3D> vertex2;
   stVector3D dinST0Point;
   float32 dynamicRadius;
-  pointer<stTransform> staticGeomObjMatrix;
+  pointer<stTransform> staticGeometricObjMatrix;
   stVector3D dinST1Point;
   stVector3D dinST01Vector;
   pointer<stGameMaterial> dynamicMaterial;
@@ -1458,13 +1477,13 @@ struct stGVForCollision {
   uint8 staticGeomObjHasNoTransformationMatrix;
   uint8 dynamicGeomObjHasZoomInsteadOfScale;
   pointer<stCollideObject> dynamicCollideObject;
-  pointer<stTransform> t0DynamicGeometricObjectMatrix;
-  pointer<stTransform> t1DynamicGeometricObjectMatrix;
+  pointer<stTransform> dynamicGeometricObjectMatrixT0;
+  pointer<stTransform> dynamicGeometricObjectMatrixT1;
   stTransform inverseMatrix;
-  stTransform d2st0TransformMatrix;
-  stTransform d2st1TransformMatrix;
-  stTransform s2dt0TransformMatrix;
-  stTransform s2dt1TransformMatrix;
+  stTransform transformMatrixD2ST0;
+  stTransform transformMatrixD2ST1;
+  stTransform transformMatrixS2DT0;
+  stTransform transformMatrixS2DT1;
   float32 staticScale;
   pointer<stCollideElementSpheres> dynamicElementSpheres;
   pointer<stCollideElementSpheres> staticElementSpheres;
