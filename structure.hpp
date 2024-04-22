@@ -467,9 +467,8 @@ struct stTransform {
   };
   
   stTransform() = default;
-  stTransform(uint32 _type, stMatrix4D T = stMatrix4D(), stVector4D _scale = stVector4D(1.0f, 1.0f, 1.0f, 1.0f)) : type(_type), matrix(T), scale(_scale) {
-    /* ... */
-  }
+  stTransform(Type _type, stMatrix4D T = stMatrix4D(), stVector4D _scale = stVector4D(1.0f, 1.0f, 1.0f, 1.0f)) : type(uint32_t(_type)), matrix(T), scale(_scale) { /* ... */ }
+  stTransform(uint32_t _type, stMatrix4D T = stMatrix4D(), stVector4D _scale = stVector4D(1.0f, 1.0f, 1.0f, 1.0f)) : type(_type), matrix(T), scale(_scale) { /* ... */ }
   
   /** transform type */
   uint32 type = 0;
@@ -1611,7 +1610,7 @@ struct stSuperObject {
   /// Return the name of the superobject
   inline auto name(bool fullname = false) -> std::string;
   /// Get the position of the supreobject
-  inline auto position() -> stVector3D;
+  inline auto position() -> stVector3D&;
   
   /// Recurse the tree below this superobject
   template <typename F, typename UserData>
@@ -1964,11 +1963,12 @@ auto stSuperObject::name(bool fullname) -> std::string {
     return "";
   }
 }
-auto stSuperObject::position() -> stVector3D {
+
+auto stSuperObject::position() -> stVector3D& {
   try {
     return globalTransform->translation();
   } catch (bad_pointer& e) {
-    return stVector3D();
+    return globalTransform->translation();
   }
 }
 
