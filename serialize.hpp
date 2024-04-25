@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cpatools/types.hpp>
+//#include <cpatools/types.hpp>
 
 #include <iomanip>
 #include <iterator>
@@ -142,7 +142,7 @@ protected:
 
 namespace cpa {
 
-static std::unordered_map<memory::TargetAddressType, bool> pointers;
+//static std::unordered_map<memory::TargetAddressType, bool> pointers;
 
 struct serializer {
   serializer() = default;
@@ -180,10 +180,10 @@ struct serializer {
     }
     
     // typeless pointer
-    auto add(const std::string& name, pointer<> v) -> void {
-      node ptr(_serializer, "pointer", v.pointeeAddress().physicalAddress());
-      add_child(ptr);
-    }
+//    auto add(const std::string& name, pointer<> v) -> void {
+//      node ptr(_serializer, "pointer", v.pointeeAddress().physicalAddress());
+//      add_child(ptr);
+//    }
     
     // typeless pointer
 //    auto _add(const std::string& name, pointer<>& v) -> void {
@@ -211,13 +211,13 @@ struct serializer {
         //this->add(nd);
         //markup_node.add(<#const node &nd#>)
         
-        std::string g = std::to_string(v);
-        if constexpr (std::is_same<T, float32>::value) g = std::to_string(float(v));
-        
-        std::stringstream ss;
-        ss << type + "(" << g  << ")";// << std::hex << int(v.memoryOffset());
-        std::string value = ss.str();
-        nd._value = value;
+//        std::string g = std::to_string(v);
+//        if constexpr (std::is_same<T, float32>::value) g = std::to_string(float(v));
+//        
+//        std::stringstream ss;
+//        ss << type + "(" << g  << ")";// << std::hex << int(v.memoryOffset());
+//        std::string value = ss.str();
+//        nd._value = value;
         
       } else if constexpr (is_pointer<T>::value) {
 //        std::stringstream ss;
@@ -225,22 +225,23 @@ struct serializer {
 //        std::string value = ss.str();
 //        nd._value = value;
         
-        try {
-          memory::TargetAddressType addr = v.pointeeAddress();
-          std::stringstream ss;
-          ss << "0x" << std::uppercase << std::setfill('0') << std::setw(sizeof(memory::TargetAddressType)) << std::hex << addr;
-          
-          node ptr(_serializer, "pointer", ss.str());
-          if (pointerResolve) {
-            if (_serializer->pointers.find(addr) == _serializer->pointers.end()) {
-              v->serialize(ptr);
-              _serializer->pointers[addr] = v;
-            }
-          }
-          nd.add_child(ptr);
-        } catch (bad_pointer& e) {
-          
-        }
+//        try {
+//          memory::TargetAddressType addr = v.pointeeAddress();
+//          std::stringstream ss;
+//          ss << "0x" << std::uppercase << std::setfill('0') << std::setw(sizeof(memory::TargetAddressType)) << std::hex << addr;
+//
+//          node ptr(_serializer, "pointer", ss.str());
+//          if (pointerResolve) {
+//            if (_serializer->pointers.find(addr) == _serializer->pointers.end()) {
+//              v->serialize(ptr);
+//              _serializer->pointers[addr] = v;
+//            }
+//          }
+//          nd.add_child(ptr);
+//        } catch (bad_pointer& e) {
+//
+//        }
+        
         //this->add(nd);
       } else if constexpr (std::is_array<T>::value) {
         
@@ -264,7 +265,7 @@ struct serializer {
     return _root;
   }
   
-  std::unordered_map<memory::TargetAddressType, pointer<>> pointers;
+  //std::unordered_map<memory::TargetAddressType, pointer<>> pointers;
   
 private:
   node _root { this, "root" };

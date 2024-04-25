@@ -2,6 +2,7 @@
 
 #include <cpatools/common.hpp>
 #include <cpatools/types.hpp>
+#include <cpatools/serialize.hpp>
 #include <cpatools/structure.hpp>
 
 #ifdef CPATOOLS_IMPLEMENTATION

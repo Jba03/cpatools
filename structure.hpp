@@ -1,9 +1,9 @@
 #pragma once
 
-#include <cpatools/common.hpp>
-#include <cpatools/configuration.hpp>
-#include <cpatools/types.hpp>
-#include <cpatools/serialize.hpp>
+//#include <cpatools/common.hpp>
+//#include <cpatools/configuration.hpp>
+//#include <cpatools/types.hpp>
+//#include <cpatools/serialize.hpp>
 
 #include <map>
 
@@ -1781,7 +1781,7 @@ struct stDsgMem {
   pointer<> initialBuffer;
   pointer<> currentBuffer;
   
-  inline auto dsgVarInfo(int idx) -> pointer<stDsgVarInfo> { return dsgVars->info[idx]; }
+  inline auto dsgVarInfo(int idx) -> pointer<stDsgVarInfo> { return (*(stDsgVar**)dsgVars)->info + idx; }
 };
   
 #pragma mark - GLI
@@ -1891,7 +1891,7 @@ auto stEngineObject::dsgMem() -> pointer<stDsgMem> {
 auto stEngineObject::dsgVar(int idx, uint32_t* type) -> pointer<> {
   try {
     pointer<stDsgMem> mem = brain->mind->dsgMem;
-    if (idx > mem->dsgVars->infoLength) return nullptr;
+    if (idx > (*(stDsgVar**)mem->dsgVars)->infoLength) return nullptr;
     pointer<stDsgVarInfo> info = mem->dsgVarInfo(idx);
     if (type) *type = info->type;
     return (uint8_t*)mem->currentBuffer + info->memoryOffset;
@@ -2090,7 +2090,7 @@ static auto segmentCollideObjectIntersect(pointer<stCollideObject> collObj, stMa
     for (int i = 0; i < collObj->numElements; i++) {
       int16_t type = collObj->elementTypes[i];
       if (type == stCollideObject::type::IndexedTriangles) {
-        pointer<stCollideElementIndexedTriangles> element = collObj->elements[i];
+        pointer<stCollideElementIndexedTriangles> element = ((stCollideElementIndexedTriangles**)collObj->elements)[i];
         stVector3D* vertices = collObj->vertices;
         uint16* indices = element->faceIndices;
         
