@@ -1367,9 +1367,9 @@ struct stCollideElementIndexedTriangles {
   int16 numFaces;
   int16 aabbIndex;
   pointer<stElementIndexedTrianglesVisual> visual;
-  pointer<> faceEdges;
-  pointer<> edgeNormals;
-  pointer<> edgeCoefficients;
+  pointer<uint16> edgeIndices;
+  pointer<stVector3D> edgeNormals;
+  pointer<float32> edgeCoefficients;
   int16 numEdges;
   padding(2)
 };
