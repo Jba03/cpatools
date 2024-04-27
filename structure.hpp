@@ -155,6 +155,8 @@ union vector3 {
   auto operator <(vector3 v) { bool result = true; for(auto i : range(3)) if (data[i] >= v[i]) result = false; return result; }
   auto operator>=(vector3 v) { bool result = true; for(auto i : range(3)) if (data[i] <  v[i]) result = false; return result; }
   auto operator<=(vector3 v) { bool result = true; for(auto i : range(3)) if (data[i] >  v[i]) result = false; return result; }
+  auto operator==(vector3 v) { return x == v.x && y == v.y && z == v.z; }
+  auto operator!=(vector3 v) { return x != v.x && y != v.y && z != v.z; }
   auto xy() -> vector2<T> { return vector2(x, y); }
   
   auto cross(vector3 v) -> vector3 {
