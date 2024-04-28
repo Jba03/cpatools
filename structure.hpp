@@ -157,6 +157,8 @@ union vector3 {
   auto operator <(vector3 v) { bool result = true; for(auto i : range(3)) if (data[i] >= v[i]) result = false; return result; }
   auto operator>=(vector3 v) { bool result = true; for(auto i : range(3)) if (data[i] <  v[i]) result = false; return result; }
   auto operator<=(vector3 v) { bool result = true; for(auto i : range(3)) if (data[i] >  v[i]) result = false; return result; }
+  auto operator==(vector3 v) { return x == v.x && y == v.y && z == v.z; }
+  auto operator!=(vector3 v) { return x != v.x && y != v.y && z != v.z; }
   auto xy() -> vector2<T> { return vector2(x, y); }
   
   auto cross(vector3 v) -> vector3 {
@@ -1257,12 +1259,12 @@ struct stSector {
 struct stOctreeNode {
   stVector3D min;
   stVector3D max;
-  pointer<stOctreeNode> children;
+  doublepointer<stOctreeNode> children;
   pointer<uint8> faceIndices;
 };
 
 struct stOctree {
-  pointer<stOctree> rootNode;
+  pointer<stOctreeNode> rootNode;
   int16 numFaces;
   padding(2)
   pointer<uint16> elementBases;
