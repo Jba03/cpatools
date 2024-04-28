@@ -1226,12 +1226,12 @@ struct stSector {
 struct stOctreeNode {
   stVector3D min;
   stVector3D max;
-  pointer<stOctreeNode> children;
+  doublepointer<stOctreeNode> children;
   pointer<uint8> faceIndices;
 };
 
 struct stOctree {
-  pointer<stOctree> rootNode;
+  pointer<stOctreeNode> rootNode;
   int16 numFaces;
   padding(2)
   pointer<uint16> elementBases;
