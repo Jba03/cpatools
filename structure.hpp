@@ -130,7 +130,7 @@ union vector2 {
     return result;
   }
   
-  struct { T x, y; };
+  struct { T x = 0.0f, y = 0.0f; };
   
 private:
   struct { std::array<T, 2> data; };
@@ -185,7 +185,7 @@ union vector3 {
     
   }
   
-  struct { T x, y, z; };
+  struct { T x = 0.0f, y = 0.0f, z = 0.0f; };
   
 private:
   struct { std::array<T, 3> data; };
@@ -227,7 +227,7 @@ union vector4 {
     
   }
   
-  struct { T x, y, z, w; };
+  struct { T x = 0.0f, y = 0.0f, z = 0.0f, w = 0.0f; };
 private:
   struct { std::array<T, 4> data; };
 };
@@ -520,17 +520,15 @@ struct stTransform {
   }
 
   auto rotateVector(stVector3D v) -> stVector3D {
-      stTransform::Type type = static_cast<stTransform::Type>(static_cast<uint32_t>(this->type));
-      if (type == stTransform::Type::Rotation) {
-          return *this * v;
-      }
-      else if (type < stTransform::Type::Rotation) {
-          return v;
-      }
-      else {
-          // TODO
-          return *this * v;
-      }
+    stTransform::Type type = static_cast<stTransform::Type>(static_cast<uint32_t>(this->type));
+    if (type == stTransform::Type::Rotation) {
+      return *this * v;
+    } else if (type < stTransform::Type::Rotation) {
+      return v;
+    } else {
+      // TODO
+      return *this * v;
+    }
   }
   
   
