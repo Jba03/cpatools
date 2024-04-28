@@ -6,6 +6,8 @@
 //#include <cpatools/serialize.hpp>
 
 #include <map>
+#include <cmath>
+#include <string>
 
 namespace cpa::structure {
   
@@ -171,6 +173,10 @@ union vector3 {
     float scale = 1.0f / length();
     for(auto i : range(3)) result[i] *= scale;
     return result;
+  }
+
+  bool isNullVector() {
+      return x == 0 && y == 0 && z == 0;
   }
   
   auto serialize(serializer::node& nd) {
@@ -509,6 +515,20 @@ struct stTransform {
     // TODO: Also transform the scale here?
     stTransform T(type, matrix.inverse(), scale);
     return T;
+  }
+
+  auto rotateVector(stVector3D v) -> stVector3D {
+      stTransform::Type type = static_cast<stTransform::Type>(static_cast<uint32_t>(this->type));
+      if (type == stTransform::Type::Rotation) {
+          return *this * v;
+      }
+      else if (type < stTransform::Type::Rotation) {
+          return v;
+      }
+      else {
+          // TODO
+          return *this * v;
+      }
   }
   
   
@@ -997,7 +1017,7 @@ struct stDynamicsAdvancedBlock {
   float32 previousSlide;
   stVector3D maxSpeed;
   stVector3D streamSpeed;
-  stVector3D addedSpeed;
+  stVector3D addSpeed;
   stVector3D limit;
   stVector3D collisionTranslation;
   stVector3D inertiaTranslation;
@@ -1007,7 +1027,7 @@ struct stDynamicsAdvancedBlock {
   padding(3)
 };
 
-/// AI and DNM message-interchange
+/// AI and DNM message-interchange - "Module Allowing the Communication of Datas from the Player or the Intelligence to the Dynamics"
 struct stMACDPID {
   float32 data0;
   stVector3D data1;
@@ -1041,25 +1061,27 @@ struct stDynamicsComplexBlock {
   stTransform previousMatrixPrevious;
 };
 
+// DNM_stObstacle
 struct stDynamicsObstacle {
   float32 rate;
   stVector3D normal;
   stVector3D contact;
   pointer<> material;
   pointer<> collideMaterial;
-  pointer<stSuperObject> superObject;
+  pointer<stSuperObject> superObject; // Collided Object
 };
 
+// DNM_stMecObstacle
 struct stDynamicsObstacleMEC {
   float32 rate;
   stVector3D normal;
   stVector3D contact;
-  pointer<> material;
-  pointer<> collideMaterial;
-  pointer<stSuperObject> superObject;
+  pointer<stGameMaterial> material;
+  pointer<stGameMaterial> collideMaterial; // collided Material
+  pointer<stSuperObject> superObject; // Collided Object
   uint32 type;
-  int16 entity1;
-  int16 entity2;
+  int16 myEntity; // type of element : segment, point, edge, ...
+  int16 collidedEntity; // type of element : segment, point, edge, ...
   stVector3D translation;
   stVector3D zoneMove;
   stVector3D zonePosition;
@@ -1087,6 +1109,17 @@ struct stDynamicsReport {
   char8 bitField;
   padding(3)
 };
+
+struct stDynamicsReportMEC {
+    uint32_t currentSurfaceState;
+    stDynamicsObstacleMEC obstacle;
+    stDynamicsObstacleMEC ground;
+    stDynamicsObstacleMEC wall;
+    stDynamicsObstacleMEC character;
+    stDynamicsObstacleMEC water;
+    stDynamicsObstacleMEC ceiling;
+};
+
 
 struct stDynamics {
   stDynamicsBaseBlock base;
