@@ -4,6 +4,7 @@
 #include <cpatools/types.hpp>
 #include <cpatools/serialize.hpp>
 #include <cpatools/structure.hpp>
+#include <cpatools/function.hpp>
 
 #ifdef CPATOOLS_IMPLEMENTATION
 # include <cpatools/static.hpp>
