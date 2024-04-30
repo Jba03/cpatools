@@ -89,18 +89,18 @@ struct stGraphChainList;
   
 using Index3D = uint16;
 
-#define CONCAT(a, b) CONCAT_INNER(a, b)
-#define CONCAT_INNER(a, b) a ## b
-#define UNIQUE_NAME(base) CONCAT(base, __LINE__)
-#define padding(S) private: uint8_t UNIQUE_NAME(padding) [S]; public:
+#define concat(a, b) concat_inner(a, b)
+#define concat_inner(a, b) a ## b
+#define unique_name(base) concat(base, __LINE__)
+#define padding(S) private: uint8_t unique_name(padding) [S]; public:
 
-#define s(what) s.add(#what, what);
-  
+/*************************/
 /** ``STRUCTURE BEGIN`` **/
-  
+/*************************/
+
 #pragma mark - Common types
   
-template< typename T = float32>
+template<typename T = float32>
 union vector2 {
   vector2() {};
   vector2(T _x, T _y) : x(_x), y(_y) {}
@@ -405,11 +405,6 @@ struct matrix {
     return stVector3D((*this)(0,0), (*this)(1,1), (*this)(2,2));
   }
   
-  auto serialize(serializer::node& s) {
-    s.type("matrix<" + std::to_string(Rows) + "," + std::to_string(Columns) + ">");
-    for (auto i : range(Rows*Columns)) s(m[i])
-  }
-  
   std::array<T, Rows * Columns> m;
 };
 
@@ -457,32 +452,27 @@ template<typename T = uint32> using stLinkedList = stDoublyLinkedList<T>;
 
 #pragma mark - stTransform
 
+#define transformTypeUninitialized          0
+#define transformTypeIdentity               1
+#define transformTypeTranslate              2
+#define transformTypeZoom                   3
+#define transformTypeScale                  4
+#define transformTypeRotation               5
+#define transformTypeRotationZoom           6
+#define transformTypeRotationScale          7
+#define transformTypeRotationScaleComplex   8
+#define transformTypeUndefined              9
+
 /// World transform
 struct stTransform {
-  
-  enum class Type : uint32_t {
-    /* gcn */
-    Uninitialized = 0,
-    Identity = 1,
-    Translate = 2,
-    Zoom = 3,
-    Scale = 4,
-    Rotation = 5,
-    RotationZoom = 6,
-    RotationScale = 7,
-    RotationScaleComplex = 8,
-    Undefined = 9,
-  };
-  
   stTransform() = default;
-  stTransform(Type _type, stMatrix4D T = stMatrix4D(), stVector4D _scale = stVector4D(1.0f, 1.0f, 1.0f, 1.0f)) : type(uint32_t(_type)), matrix(T), scale(_scale) { /* ... */ }
-  stTransform(uint32_t _type, stMatrix4D T = stMatrix4D(), stVector4D _scale = stVector4D(1.0f, 1.0f, 1.0f, 1.0f)) : type(_type), matrix(T), scale(_scale) { /* ... */ }
+  stTransform(uint32 _type, stMatrix4D T = stMatrix4D(), stVector4D _scale = stVector4D(1.0f, 1.0f, 1.0f, 1.0f)) : type(_type), matrix(T), scale(_scale) { /* ... */ }
   
-  /** transform type */
-  uint32 type = 0;
-  /** matrix */
-  stMatrix4D matrix;
-  /** external scale parameter */
+  /// Type of the transform
+  uint32 type = transformTypeIdentity;
+  /// Transform matrix
+  stMatrix4D matrix = stMatrix4D::identity();
+  /// Scale parameter
   stVector4D scale;
   
   /// Get translation vector
@@ -490,20 +480,23 @@ struct stTransform {
     return matrix.translation();
   }
   
-  auto getRotation(stVector3D& i, stVector3D& j, stVector3D& k) -> void {
-    Type t = static_cast<Type>(uint32_t(type));
-    if (t == Type::Rotation) {
+  /// Get rotation vectors if the type is `transformTypeRotation`
+  auto getRotation(stVector3D& i, stVector3D& j, stVector3D& k) -> bool {
+    if (static_cast<uint32_t>(type) == transformTypeRotation) {
       i = *(stVector3D*)&matrix(0,0);
       j = *(stVector3D*)&matrix(1,0);
       k = *(stVector3D*)&matrix(2,0);
+      return true;
+    } else {
+      return false;
     }
   }
   
-  auto operator * (stVector3D v) -> stVector3D {
+  auto operator*(stVector3D v) -> stVector3D {
     return (matrix * stVector4D(v.x, v.y, v.z, 1.0f)).xyz();
   }
   
-  auto operator * (stVector4D v) -> stVector4D {
+  auto operator*(stVector4D v) -> stVector4D {
     return matrix * v;
   }
   
@@ -520,10 +513,10 @@ struct stTransform {
   }
 
   auto rotateVector(stVector3D v) -> stVector3D {
-    stTransform::Type type = static_cast<stTransform::Type>(static_cast<uint32_t>(this->type));
-    if (type == stTransform::Type::Rotation) {
+    uint32_t type = this->type;
+    if (type == transformTypeRotation) {
       return *this * v;
-    } else if (type < stTransform::Type::Rotation) {
+    } else if (type < transformTypeRotation) {
       return v;
     } else {
       // TODO
@@ -531,27 +524,31 @@ struct stTransform {
     }
   }
   
-  
   inline auto typeName() -> std::string {
-    switch (static_cast<Type>(uint32_t(type))) {
-      case Type::Uninitialized: return "Uninitialized";
-      case Type::Identity: return "Identity";
-      case Type::Translate: return "Translate";
-      case Type::Zoom: return "Zoom";
-      case Type::Scale: return "Scale";
-      case Type::Rotation: return "Rotation";
-      case Type::RotationZoom: return "RotationZoom";
-      case Type::RotationScale: return "RotationScale";
-      case Type::RotationScaleComplex: return "RotationScaleComplex";
-      case Type::Undefined: return "Undefined";
-      default: return "Invalid";
+    switch (static_cast<uint32_t>(type)) {
+      case transformTypeUninitialized:
+        return "Uninitialized";
+      case transformTypeIdentity:
+        return "Identity";
+      case transformTypeTranslate:
+        return "Translate";
+      case transformTypeZoom:
+        return "Zoom";
+      case transformTypeScale:
+        return "Scale";
+      case transformTypeRotation:
+        return "Rotation";
+      case transformTypeRotationZoom:
+        return "RotationZoom";
+      case transformTypeRotationScale:
+        return "RotationScale";
+      case transformTypeRotationScaleComplex:
+        return "RotationScaleComplex";
+      case transformTypeUndefined:
+        return "Undefined";
+      default:
+        return "Invalid";
     }
-  }
-  
-  auto serialize(serializer::node& s) {
-    s(type)
-    s(matrix)
-    s(scale)
   }
 };
   
@@ -574,42 +571,57 @@ struct stAlways {
 };
   
 #pragma mark - stObjectType
-  
-enum ObjectType {
-  Family = 0,
-  Model = 1,
-  Instance = 2,
-};
 
-using ObjectNameResolver = std::function<std::string(ObjectType, int*)>;
+/// Family object type
+#define objectTypeFamily    0
+/// Model object type
+#define objectTypeModel     1
+/// Instance object type
+#define objectTypeInstance  2
+
+/// Function to resolve object type names
+/// TODO: Make this part of the library
+using ObjectNameResolver = std::function<std::string(int16_t, int*)>;
   
 /// Object identifier
 struct stObjectTypeElement {
+  /// Next object type element
   pointer<stObjectTypeElement> next;
+  /// Previous object type element
   pointer<stObjectTypeElement> prev;
-  pointer<stDoublyLinkedList<stObjectTypeElement>> father;
+  /// Pointer to list containing this element
+  pointer<stDoublyLinkedList<stObjectTypeElement>> list;
+  /// Pointer to name of the element
   pointer<string<>> name;
+  /// Priority
   uint8 priority;
+  /// Identifier
   uint8 identifier;
+  /// Padding
   padding(2)
-  void serialize(serializer& s);
 };
 
 /// Global object type table
 struct stObjectType {
+  /// Family object types
   stDoublyLinkedList<stObjectTypeElement> family;
+  /// Model object types
   stDoublyLinkedList<stObjectTypeElement> model;
+  /// Instance object types
   stDoublyLinkedList<stObjectTypeElement> instance;
-  void serialize(serializer::node& s);
 };
   
 #pragma mark - Engine
   
 /// Global engine timer
 struct stEngineTimer {
+  /// Current frame of the level
   uint32 currentFrame;
+  /// Internal timer ID handle
   int16 timerHandle;
+  /// Padding
   padding(2)
+  /// Current counter
   uint32 currentCount;
   uint32 deltaCount;
   uint32 counter[16];
@@ -624,28 +636,32 @@ struct stEngineTimer {
   void serialize(serializer& s);
 };
 
+/* engine mode */
+#define engineModeInvalid               0
+#define engineModeInitialize            1
+#define engineModeDeinitialize          2
+#define engineModeInitializeGameplay    3
+#define engineModeDeinitializeGameplay  4
+#define engineModeEnterLevel            5
+#define engineModeChangeLevel           6
+#define engineModeGameplay              9
+
+/* input mode */
+#define engineInputModeNormal     0
+#define engineInputModeCommands   1
+
+/// Engine structure
 struct stEngineStructure {
-  enum mode : uint8_t {
-    Invalid = 0,
-    Initialize = 1,
-    Deinitialize = 2,
-    InitializeGameplay = 3,
-    DeinitializeGameplay = 4,
-    EnterLevel = 5,
-    ChangeLevel = 6,
-    Gameplay = 9,
-  };
-  
-  enum inputMode : uint8_t {
-    Normal = 0,
-    Commands = 1,
-  };
-  
-  mode mode;
+  /// Engine mode (`engineMode#`)
+  uint8 mode;
+  /// Current level name
   string<30> currentLevelName;
+  /// Name of next level to be loaded
   string<30> nextLevelName;
+  /// Name of entry level
   string<30> firstLevelName;
-  inputMode inputMode = Normal;
+  /// Input mode (`engineInputMode#`)
+  uint8 inputMode;
   uint8 displayFixMode;
   padding(3)
   uint32 displayMode;
@@ -683,28 +699,37 @@ struct stEngineStructure {
   uint8 paused2;
   uint8 doGameSave;
   
+  /// List of level names
   string<30> levelNames[150];
+  /// List of demo save names
   string<12> demoNames[30];
+  /// List of demo level names
   string<12> demoLevelNames[30];
-  
+  /// Number of demo levels
   uint8 demoCount;
+  /// Number of real levels
   uint8 levelCount;
   uint8 currentLevel;
   uint8 previousLevel;
   uint8 previousLevelExitID;
   uint8 globalLevelCounter;
+  /// Is in demo mode?
   uint8 demoMode;
+  /// Current language index
   uint8 currentLanguage;
+  /// Number of languages
   uint8 languageCount;
   uint8 engineFrozen;
   uint8 resurrection;
+  /// Camera mode
   uint8 cameraMode;
   uint8 currentImportance;
   uint8 numSuperObjectsAllocated;
   uint8 numSuperObjectsLoaded;
   uint8 numNonPersistentSOLinks;
+  /// Padding
   padding(9);
-  
+  ///
   doublepointer<> superObjectLinks;
   pointer<stGraphChainList> graphList;
   pointer<stCineManager> cineManager;
@@ -803,38 +828,36 @@ struct stInputStructure {
   
 #pragma mark - RND
   
-#if CPA_ENGINE_VERSION == CPA_ENGINE_VERSION_R3
-# define RND_DEFAULT_INDEX        0x0000 // Default index into tableIndices
-# define RND_TABLEINDICES_COUNT   0x0032 // Size of tableIndices
-# define RND_TABLE_COUNT          0x2710 // Size of table
-#else
-# define RND_DEFAULT_INDEX        0x0000
-# define RND_TABLEINDICES_COUNT   0x0032
-# define RND_TABLE_COUNT          0x2710
-#endif
-  
+/// Size of tableIndices
+#define RNDTableIndexCount 0x0032
+/// Size of the table
+#define RNDTableCount 0x2710
+/// Default index into tableIndices
+#define RNDDefaultIndex 0x0000
+
 /// Random number table structure
 struct stRandom {
   /// Index the random number table by absolute offset
   int32_t index(unsigned i) {
     uint32_t* T = table;
-    return T ? ((T[i % RND_TABLE_COUNT] >> 16) & 0x7FFF) : 0;
+    return T ? ((T[i % RNDTableCount] >> 16) & 0x7FFF) : 0;
   }
   /// Index the random number table using an index from tableIndices, optionally offset
   int32_t indexRelative(unsigned TableIndicesIdx, unsigned Offset) {
     return index(uint32_t(tableIndices[TableIndicesIdx]) + Offset);
   }
   /// Simulate `Count` calls into the RND table, bounding the value by `Min` and `Max`
-  int32_t call(unsigned const Count, unsigned const Min, unsigned const Max, unsigned const Index = RND_DEFAULT_INDEX) {
+  int32_t call(unsigned const Count, unsigned const Min, unsigned const Max, unsigned const Index = RNDDefaultIndex) {
     int32_t n, v = 0;
     for (n = 0; n < Count; n++)
       v = (Min + ((Max + 1 - Min) * indexRelative(Index, n)) / (tableMax + 1));
     return v;
   }
+  
   /// Size of the table
   uint32 tableSize;
   /// Indices into the table
-  uint32 tableIndices[RND_TABLEINDICES_COUNT];
+  uint32 tableIndices[RNDTableIndexCount];
   /// Last index from tableIndices
   uint32 lastIndex;
   /// Largest number present in table
@@ -843,15 +866,6 @@ struct stRandom {
   float32 tableMaxInverse;
   /// Random number table
   pointer<uint32> table;
-  
-  auto serialize(serializer::node& s) {
-    s.type("stRandom");
-    s(tableSize)
-    s(tableIndices)
-    s(lastIndex)
-    s(tableMax)
-    s(tableMaxInverse)
-  }
 };
   
 #pragma mark - 3D
@@ -941,89 +955,139 @@ struct stCineActor {
 };
 
 struct stCine {
+  /// Actors controlling the cinematic
   stDoublyLinkedList<stCineActor> actors;
+  /// Next cinematic in this list
   pointer<stCine> next;
+  /// Previous cinematic in this list
   pointer<stCine> prev;
-  pointer<stDoublyLinkedList<stCine>> parents;
+  /// Parent list
+  pointer<stDoublyLinkedList<stCine>> parentList;
+  /// Is the cinematic playing?
   uint8 playing;
+  /// Padding
   padding(3)
+  /// Event identifier
   uint32 event;
+  /// Name of the cinematic
   string<255> name;
 };
   
 struct stCineManager {
-#if CPA_ENGINE_VERSION == CPA_ENGINE_VERSION_R3  // spec r3
-#if CPA_PLATFORM == CPA_PLATFORM_GCN
+  /// List of level cinematics
   stDoublyLinkedList<stCine> cineList;
-  stTransform fixedCameraTransform;
-  pointer<stSuperObject> activeCamera;
-#elif CPA_PLATFORM == CPA_PLATFORM_PS2
-  stDoublyLinkedList<stCine> cineList;
+  /// Padding
+#if CPA_PLATFORM == CPA_PLATFORM_PS2
   padding(4)
+#endif
+  /// Force camera transform
   stTransform fixedCameraTransform;
+  /// Padding
+#if CPA_PLATFORM == CPA_PLATFORM_PS2
   padding(2)
+#endif
+  /// Currently active cutscene camera
   pointer<stSuperObject> activeCamera;
-#endif
-#endif
 };
   
 #pragma mark - DNM
   
+/// Axis-angle
 struct stDynamicsRotation {
   float32 angle;
   stVector3D axis;
 };
 
+/// Dynamics base block
 struct stDynamicsBaseBlock {
+  /// Type of the object
   int32 objectType;
+  /// Current mechanics ID card
   pointer<> idcard;
+  /// Mechanics control flags
   uint32 flags;
+  /// Mechanics verification flags
   uint32 endFlags;
+  /// Gravity
   float32 gravity;
+  /// Slope limit (1.0f)
   float32 slopeLimit;
+  /// Wall/ground limit (45 degrees)
   float32 slopeCosine;
+  /// Ground slide factor
   float32 slide;
+  /// Rebound factor
   float32 rebound;
+  /// Impose absolute speed (after inertia and gravity calculations)
   stVector3D imposeSpeed;
+  /// Propose speed (before inertia and gravity calculations)
   stVector3D proposeSpeed;
+  /// Previous speed
   stVector3D previousSpeed;
+  /// Actor scale
   stVector3D scale;
+  /// Animation-specific speed
   stVector3D animationProposeSpeed;
+  /// Previous safe translation
   stVector3D safeTranslation;
+  /// Additional translation
   stVector3D addTranslation;
+  
 #if CPA_ENGINE_VERSION == CPA_ENGINE_VERSION_R3 && CPA_PLATFORM == CPA_PLATFORM_PS2
+  /// Padding
   padding(8)
 #endif
+  
+  /// Previous transform
   stTransform previousTransform;
+  /// Current transform
   stTransform currentTransform;
+  /// Impose absolute rotation
   stMatrix3D imposedRotation;
-  uint8 nFrame;
+  /// Previous number of frames
+  uint8 numFrames;
+  /// Padding
   padding(3)
+  /// Collision report copied from mechanics
   pointer<stDynamicsReport> report;
+  
 #if CPA_ENGINE_VERSION == CPA_ENGINE_VERSION_R3 && CPA_PLATFORM == CPA_PLATFORM_PS2
+  /// Padding
   padding(8)
 #endif
 };
   
+/// Dynamics advanced block
 struct stDynamicsAdvancedBlock {
-  float32 xInertia;
-  float32 yInertia;
-  float32 zInertia;
+  /// Inertia (originally component-separated)
+  stVector3D inertia;
+  /// Priority of stream
   float32 streamPriority;
+  /// Stream effect factor
   float32 streamFactor;
-  float32 xSlideFactor;
-  float32 ySlideFactor;
-  float32 zSlideFactor;
+  /// Slide factor (originally component-separated)
+  stVector3D slideFactor;
+  /// Previous slide
   float32 previousSlide;
+  /// Speed limit
   stVector3D maxSpeed;
+  /// Speed of stream
   stVector3D streamSpeed;
+  /// Speed to add
   stVector3D addSpeed;
+  /// Positional limits?
   stVector3D limit;
+  /// Collision translation
   stVector3D collisionTranslation;
+  /// Translation separate of inertia
   stVector3D inertiaTranslation;
+  /// Ground normal
   stVector3D groundNormal;
+  /// Wall normal
   stVector3D wallNormal;
+  /// Number of calls to mechanics made without colliding with anything
   int8 collideCount;
+  /// Padding
   padding(3)
 };
 
@@ -1047,6 +1111,7 @@ struct stMACDPID {
   uint8 data15;
 };
 
+/// Dynamics complex block
 struct stDynamicsComplexBlock {
   float32 tiltStrength;
   float32 tiltInertia;
@@ -1055,75 +1120,131 @@ struct stDynamicsComplexBlock {
   float32 hangingLimit;
   stVector3D contact;
   stVector3D fallTranslation;
+  /// Injectable parameters
   stMACDPID macdpid;
   pointer<stSuperObject> platformSuperObject;
   stTransform previousMatrixAbsolute;
   stTransform previousMatrixPrevious;
 };
 
-// DNM_stObstacle
+/// Dynamics obstacle reported from mechanics
 struct stDynamicsObstacle {
+  /// Collision rate
   float32 rate;
+  /// Contact normal
   stVector3D normal;
+  /// World contact point
   stVector3D contact;
-  pointer<> material;
-  pointer<> collideMaterial;
-  pointer<stSuperObject> superObject; // Collided Object
+  /// Material for entity 1 (self)
+  pointer<stGameMaterial> myMaterial;
+  /// Material for entity 2 (object collided with)
+  pointer<stGameMaterial> collidedMaterial;
+  /// Collided object
+  pointer<stSuperObject> superObject;
 };
 
-// DNM_stMecObstacle
+// Dynamics obstacle type
+#define dynamicsObstacleTypeNothing     0
+#define dynamicsObstacleTypeScenery     1
+#define dynamicsObstacleTypeMobile      2
+#define dynamicsObstacleTypeDoubleEdge  4
+#define dynamicsObstacleTypeMobileWall  9
+
+/// Mechanics engine obstacle (used internally)
+/// Cast to stCollisionCase
 struct stDynamicsObstacleMEC {
+  /// Collision rate
   float32 rate;
+  /// Contact normal
   stVector3D normal;
+  /// World contact poimt
   stVector3D contact;
-  pointer<stGameMaterial> material;
-  pointer<stGameMaterial> collideMaterial; // collided Material
-  pointer<stSuperObject> superObject; // Collided Object
+  /// Material for entity 1 (self)
+  pointer<stGameMaterial> myMaterial;
+  /// Material for entity 2 (object collided with)
+  pointer<stGameMaterial> collidedMaterial;
+  /// Collided Object
+  pointer<stSuperObject> superObject;
+  /// Type of the obstacle
   uint32 type;
-  int16 myEntity; // type of element : segment, point, edge, ...
-  int16 collidedEntity; // type of element : segment, point, edge, ...
+  /// Entity 1 type (self)
+  int16 myEntity;
+  /// Entity 2 type (object collided with)
+  int16 collidedEntity;
+  /// Translation to resolve the collision
   stVector3D translation;
+  /// Zone movement
   stVector3D zoneMove;
+  /// End position of dynamic object
   stVector3D zonePosition;
+  /// Zone radius of dynamic object
   float32 zoneRadius;
 };
 
+/// Movement
 struct stDynamicsMovevement {
+  /// Linear movement
   stVector3D linear;
+  /// Angular movement
   stDynamicsRotation angular;
 };
 
+/// Dynamics collision report
 struct stDynamicsReport {
-  uint32 previousSurfaceState = 0;
-  uint32 currentSurfaceState = 0;
+  /// The previous surface state
+  uint32 previousSurfaceState;
+  /// The current surface state
+  uint32 currentSurfaceState;
+  /// Generic obstacle
   stDynamicsObstacle obstacle;
+  /// Ground obstacle
   stDynamicsObstacle ground;
+  /// Wall obstacle
   stDynamicsObstacle wall;
+  /// Actor obstacle
   stDynamicsObstacle character;
+  /// Water obstacle
   stDynamicsObstacle water;
+  /// Ceiling obstacle
   stDynamicsObstacle ceiling;
+  /// Previous absolute speed
   stDynamicsMovevement previousAbsoluteSpeed;
+  /// Current absolute speed
   stDynamicsMovevement currentAbsoluteSpeed;
+  /// Previous absolute position
   stDynamicsMovevement previousAbsolutePosition;
+  /// Current absolute position
   stDynamicsMovevement currentAbsolutePosition;
+  /// Extra flags
   char8 bitField;
+  /// Padding
   padding(3)
 };
 
 struct stDynamicsReportMEC {
-    uint32_t currentSurfaceState;
-    stDynamicsObstacleMEC obstacle;
-    stDynamicsObstacleMEC ground;
-    stDynamicsObstacleMEC wall;
-    stDynamicsObstacleMEC character;
-    stDynamicsObstacleMEC water;
-    stDynamicsObstacleMEC ceiling;
+  /// The current surface state
+  uint32_t currentSurfaceState;
+  /// Generic obstacle
+  stDynamicsObstacleMEC obstacle;
+  /// Ground obstacle
+  stDynamicsObstacleMEC ground;
+  /// Wall obstacle
+  stDynamicsObstacleMEC wall;
+  /// Actor obstacle
+  stDynamicsObstacleMEC character;
+  /// Water obstacle
+  stDynamicsObstacleMEC water;
+  /// Ceiling obstacle
+  stDynamicsObstacleMEC ceiling;
 };
 
-
+/// Parameters for mechanics engine
 struct stDynamics {
+  /// Base block
   stDynamicsBaseBlock base;
+  /// Advanced block
   stDynamicsAdvancedBlock advanced;
+  /// Complex block
   stDynamicsComplexBlock complex;
   
   auto flag(int flag) -> bool {
@@ -1150,9 +1271,13 @@ struct stDynam {
 #pragma mark - Engine object
   
 struct stStandardGameInfo {
+  /// Family object type index
   int32 familyType;
+  /// Model object type index
   int32 modelType;
+  /// Instance object type index
   int32 instanceType;
+  /// Superobject containing this actor
   pointer<stSuperObject> superObject;
   uint8 initialFlag;
   uint8 flag1;
@@ -1182,21 +1307,33 @@ struct stStandardGameInfo {
   /* :: custom values :: */
 };
 
+/// Engine object - an actor in the dynamic world
 struct stEngineObject {
-  pointer<st3DData> p3DData;
+  /// 3D-related parameters
+  pointer<st3DData> data3D;
+  /// Standard game info
   pointer<stStandardGameInfo> stdGame;
+  /// Dynamics
   pointer<stDynam> dynam;
+  /// Brain and AI
   pointer<stBrain> brain;
+  /// Cinematic-related info of this actor
   pointer<stCineInfo> cineInfo;
+  /// Collision geometry set
   pointer<stCollideSet> collSet;
+  /// Waypoint microstructure
   pointer<stMSWay> msWay;
+  /// Light microstructure
   pointer<stMSLight> msLight;
+  /// Sector info
   pointer<stSectorInfo> sectorInfo;
+  /// ?
   pointer<stMicro> micro;
+  /// Sound microstructure
   pointer<stMSSound> msSound;
   
   /// Get the name of this actor in order of [Instance, Model, Family]
-  inline auto name(ObjectType type = Instance) -> std::string;
+  inline auto name(uint8 type = objectTypeInstance) -> std::string;
   /// Get the superobject associated with this actor
   inline auto superobject() -> pointer<stSuperObject>;
   /// Return the AI model of this actor
@@ -1214,18 +1351,14 @@ struct stEngineObject {
   /// Serialize this structure
   inline auto serialize(serializer::node& s);
 };
-
-using stActor = stEngineObject;
   
 #pragma mark - SECT
   
+#define sectorPriorityMin     0
+#define sectorPriorityNormal  64
+#define sectorPriorityMax     127
+
 struct stSector {
-  enum priority : int8_t {
-    Min = 0,
-    Normal = 64,
-    Max = 127,
-  };
-  
   stDoublyLinkedList<> characterList;
   stDoublyLinkedList<> staticLightList;
   stDoublyLinkedList<> dynamicLightList;
@@ -1246,52 +1379,63 @@ struct stSector {
 #if CPA_PLATFORM == CPA_PLATFORM_GCN
   string<0x104> name;
 #endif
-  
-  static const inline uint32 minPriority    = 0;
-  static const inline uint32 normalPriority = 64;
-  static const inline uint32 maxPriority    = 127;
 };
   
 #pragma mark - COL
   
 struct stOctreeNode {
+  /// Minimum point
   stVector3D min;
+  /// Maximum point
   stVector3D max;
+  /// 8 child nodes
   doublepointer<stOctreeNode> children;
+  /// Face indices: overlapping indices into element and element data. May be NULL.
   pointer<uint8> faceIndices;
 };
 
 struct stOctree {
+  /// Root node of the octree
   pointer<stOctreeNode> rootNode;
+  /// Number of faces the octree contains
   int16 numFaces;
+  /// Padding
   padding(2)
+  /// Element bases table
   pointer<uint16> elementBases;
+  /// Octree minimum point
   stVector3D min;
+  /// Octree maximum point
   stVector3D max;
 };
 
+#define collideObjectTypeIndexedTriangles   1
+#define collideObjectTypeFacemap            2
+#define collideObjectTypeSprite             3
+#define collideObjectTypeTMesh              4
+#define collideObjectTypePoints             5
+#define collideObjectTypeLines              6
+#define collideObjectTypeIndexedSpheres     7
+#define collideObjectTypeAABB               8
+#define collideObjectTypeCones              9
+#define collideObjectTypeDeformationSetInfo 13
+#define collideObjectTypeInvalid            0xFFFF
+
 struct stCollideObject {
-  
-  enum type {
-    IndexedTriangles   = 1,
-    Facemap            = 2,
-    Sprite             = 3,
-    TMesh              = 4,
-    Points             = 5,
-    Lines              = 6,
-    IndexedSpheres     = 7,
-    AABB               = 8,
-    Cones              = 9,
-    DeformationSetInfo = 13,
-    Invalid            = 0xFFFF,
-  };
-  
+  /// Number of vertices
   int16 numVertices;
+  /// Number of elements
   int16 numElements;
+  /// Number of bounding boxes
   int16 numBoundingBoxes;
+  /// Padding
   padding(2)
+  /// Vertex data
   pointer<stVector3D> vertices;
+  /// Element types
   pointer<int16> elementTypes;
+  /// Elements - one of:
+  ///   stCollideElementIndexedTriangles
   doublepointer<> elements;
   pointer<stOctree> octree;
   pointer<> boundingBoxes;
@@ -1372,7 +1516,7 @@ struct stCollideSet {
 };
 
 struct stElementIndexedTrianglesVisual {
-  pointer<> visualMaterial;
+  pointer<stGameMaterial> visualMaterial;
   int16 numFaces;
   int16 numUVs;
   int16 numUVStages;
@@ -1394,29 +1538,49 @@ struct stElementIndexedTrianglesVisual {
 };
 
 struct stCollideElementIndexedTriangles {
-  pointer<stCollideMaterial> material;
-  pointer<uint16> faceIndices;
-  pointer<stVector3D> normals;
-  int16 numFaces;
-  int16 aabbIndex;
-  pointer<stElementIndexedTrianglesVisual> visual;
-  pointer<uint16> edgeIndices;
-  pointer<stVector3D> edgeNormals;
-  pointer<float32> edgeCoefficients;
-  int16 numEdges;
-  padding(2)
-};
-
-struct stCollideElementIndexedSphere {
-  float32 radius;
+  /// Collide material
   pointer<stGameMaterial> material;
-  int16 indexOfCenterPoint;
+  /// Indices into collide element vertex array
+  pointer<uint16> faceIndices;
+  /// List of normals
+  pointer<stVector3D> normals;
+  /// Number of faces
+  int16 numFaces;
+  /// Index of AABB
+  int16 aabbIndex;
+  /// Visual set
+  pointer<stElementIndexedTrianglesVisual> visual;
+  /// Indices of triangle edges
+  pointer<uint16> edgeIndices;
+  /// Indices of edge normals
+  pointer<stVector3D> edgeNormals;
+  /// Edge coefficients
+  pointer<float32> edgeCoefficients;
+  /// Number of edges
+  int16 numEdges;
+  /// Padding
   padding(2)
 };
 
-struct stCollideElementSpheres {
+/// Indexed collide sphere
+struct stCollideElementIndexedSphere {
+  /// Sphere radius
+  float32 radius;
+  /// Collide material
+  pointer<stGameMaterial> material;
+  /// Index into collide element vertex array
+  int16 indexOfCenterPoint;
+  /// Padding
+  padding(2)
+};
+
+/// A collide element of multiple indexed spheres
+struct stCollideElementIndexedSpheres {
+  /// List of spheres
   pointer<stCollideElementIndexedSphere> spheres;
+  /// Number of spheres
   int16 numSpheres;
+  /// Collide object AABB index
   int16 aabbIndex;
 };
 
@@ -1450,13 +1614,21 @@ struct stCollideMaterial {
   padding(2)
 };
 
+/// Collision case, cast internally to stDynamicsObstacleMEC.
 struct stCollisionCase {
+  /// Time of collision (-1.0 to 1.0)
   float32 collisionTime;
+  /// Normal of the collision
   stVector3D collisionNormal;
+  /// World point of the collision
   stVector3D collisionPoint;
+  /// Material of the dynamic object
   pointer<stGameMaterial> dynamicMaterial;
+  /// Material of the static object
   pointer<stGameMaterial> staticMaterial;
+  /// Parameter 1 (superobject)
   pointer<> param1;
+  /// Parameter 2
   int32 param2;
   int16 dynamicEntity;
   int16 staticEntity;
@@ -1482,9 +1654,7 @@ struct stCollideElementAlignedBoxes {
   int16 parallelBoxIndex;
 };
   
-#if CPA_ENGINE_VERSION == CPA_ENGINE_VERSION_R3
-# define COL_MAX_SELECTED_OCTREE_NODES 100
-#endif
+#define COL_MAX_SELECTED_OCTREE_NODES 100
   
 struct stGVForCollision {
   pointer<stVector3D> vertex1;
@@ -1517,8 +1687,8 @@ struct stGVForCollision {
   stTransform transformMatrixS2DT0;
   stTransform transformMatrixS2DT1;
   float32 staticScale;
-  pointer<stCollideElementSpheres> dynamicElementSpheres;
-  pointer<stCollideElementSpheres> staticElementSpheres;
+  pointer<stCollideElementIndexedSpheres> dynamicElementSpheres;
+  pointer<stCollideElementIndexedSpheres> staticElementSpheres;
   int32 bitFieldOfIndexedSpheresInCollision;
   pointer<stCollideElementIndexedSphere> staticIndexedSphere;
   stVector3D swapDinST0Point;
@@ -1819,22 +1989,24 @@ struct stDsgMem {
   
 #pragma mark - GLI
   
-struct stVertex2D {
+struct stVertex2DGLI {
   float32 x;
   float32 y;
   float32 dz;
 };
 
-struct stCamera {
+struct stCameraGLI {
   int32 cameraMode;
   stTransform transform;
+  /// Field of view
   float32 xAlpha;
+  /// Field of view
   float32 yAlpha;
   float32 near;
   float32 far;
   float32 screen;
-  stVertex2D scale;
-  stVertex2D trans;
+  stVertex2DGLI scale;
+  stVertex2DGLI trans;
   float32 xProjectionR;
   float32 yprojectionR;
   stVector3D left;
@@ -1853,6 +2025,8 @@ struct stCamera {
   
 #pragma mark - WP
   
+
+
 struct stWayPoint {
   stVector3D point;
   float32 radius;
@@ -1884,22 +2058,38 @@ struct stMSWay {
   uint8 spherical;
   padding(3)
 };
-  
+
+/***********************/
+/** ``STRUCTURE END`` **/
+/***********************/
+
+#undef padding
+#undef concat_inner
+#undef unique_name
+#undef concat
+
 #pragma mark - Function -
+
+/// Serialization
+#define s(what) s.add(#what, what);
+
+/************************/
+/** ``FUNCTION BEGIN`` **/
+/************************/
 
 #pragma mark EngineStructure
     
 auto stEngineStructure::loadLevel(std::string levelName) -> void {
   nextLevelName = levelName;
-  mode = stEngineStructure::mode::ChangeLevel;
+  mode = engineModeChangeLevel;
 }
     
 #pragma mark EngineObject
 
-auto stEngineObject::name(ObjectType type) -> std::string {
+auto stEngineObject::name(uint8 type) -> std::string {
   std::string name;
   extern ObjectNameResolver nameResolver;
-  for (int i : {stdGame->instanceType, stdGame->modelType, stdGame->familyType}) {
+  for (auto i : {stdGame->instanceType, stdGame->modelType, stdGame->familyType}) {
     name = nameResolver(type, &i);
     if (name != "Invalid name") break;
   }
@@ -1969,28 +2159,44 @@ auto stZdxList::all() -> std::vector<pointer<stCollideObject>> {
 
 auto stSuperObject::typeName() -> std::string {
   switch (type) {
-    case None: return "Dummy SuperObject";
-    case World: return "World";
-    case Actor: return "Actor";
-    case Sector: return "Sector";
-    case PhysicalObject: return "PhysicalObject";
-    case PhysicalObjectMirror: return "PhysicalObjectMirror";
-    case IPO: return "IPO";
-    case IPOMirror: return "IPO.Mirror";
-    case SpecialEffect: return "SpecialEffect";
-    case NoAction: return "NoAction";
-    case Mirror: return "Mirror";
-    default: return "Invalid";
+    case None:
+      return "Dummy SuperObject";
+    case World:
+      return "World";
+    case Actor:
+      return "Actor";
+    case Sector:
+      return "Sector";
+    case PhysicalObject:
+      return "PhysicalObject";
+    case PhysicalObjectMirror:
+      return "PhysicalObject.Mirror";
+    case IPO:
+      return "IPO";
+    case IPOMirror:
+      return "IPO.Mirror";
+    case SpecialEffect:
+      return "SpecialEffect";
+    case NoAction:
+      return "NoAction";
+    case Mirror:
+      return "Mirror";
+    default:
+      return "Invalid";
   }
 }
 
 auto stSuperObject::name(bool fullname) -> std::string {
   try {
     switch (type) {
-      case Actor: return actor->name();
-      case IPO: return fullname ? ipo->name : ipo->name.lastPathComponent();
-      case Sector: return fullname ? sector->name : sector->name.lastPathComponent();
-      default: return typeName();
+      case Actor:
+        return actor->name();
+      case IPO:
+        return fullname ? ipo->name : ipo->name.lastPathComponent();
+      case Sector:
+        return fullname ? sector->name : sector->name.lastPathComponent();
+      default:
+        return typeName();
     }
   } catch (bad_pointer& e) {
     return "";
@@ -2043,8 +2249,8 @@ static inline auto sectorSearch(pointer<stSuperObject> fatherSector, stVector3D 
     float dNear = INFINITY;
     float dCurrent = INFINITY;
     float dVirtual = INFINITY;
-    enum stSector::priority p = stSector::priority::Min;
-    enum stSector::priority v = stSector::priority::Min;
+    int8 p = sectorPriorityMin;
+    int8 v = sectorPriorityMax;
     
     pointer<stSuperObject> targetSector = nullptr;
     pointer<stSuperObject> targetSectorVirtual = nullptr;
@@ -2062,7 +2268,7 @@ static inline auto sectorSearch(pointer<stSuperObject> fatherSector, stVector3D 
           if (sector->priority > p) {
             targetSector = object;
             dCurrent = dNear;
-            p = static_cast<enum stSector::priority>(int8_t(sector->priority));
+            p = sector->priority;
           } else if (sector->priority == p && dNear < dCurrent) {
             targetSector = object;
             dCurrent = dNear;
@@ -2071,7 +2277,7 @@ static inline auto sectorSearch(pointer<stSuperObject> fatherSector, stVector3D 
           if (sector->priority > v) {
             targetSectorVirtual = object;
             dVirtual = dNear;
-            v = static_cast<enum stSector::priority>(int8_t(sector->priority));
+            v = sector->priority;
           } else if (sector->priority == v && dNear < dVirtual) {
             targetSectorVirtual = object;
             dVirtual = dNear;
@@ -2122,7 +2328,7 @@ static auto segmentCollideObjectIntersect(pointer<stCollideObject> collObj, stMa
     
     for (int i = 0; i < collObj->numElements; i++) {
       int16_t type = collObj->elementTypes[i];
-      if (type == stCollideObject::type::IndexedTriangles) {
+      if (type == collideObjectTypeIndexedTriangles) {
         pointer<stCollideElementIndexedTriangles> element = ((stCollideElementIndexedTriangles**)collObj->elements)[i];
         stVector3D* vertices = collObj->vertices;
         uint16* indices = element->faceIndices;
@@ -2156,7 +2362,10 @@ static auto segmentCollideObjectIntersect(pointer<stCollideObject> collObj, stMa
   }
 }
 
-#undef s
-#undef padding
-};
+/************************/
+/** ``FUNCTION END`` **/
+/************************/
 
+#undef s
+
+};
