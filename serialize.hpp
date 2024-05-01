@@ -194,61 +194,61 @@ struct serializer {
     template<typename T>
     auto add(const std::string& name, T& v, bool pointerResolve = true) -> void {
       node nd(_serializer, name);
-      if constexpr (is_type<T>::value) {
-        std::string type;
-        if constexpr (std::is_same<T, char8>::value)  type = "char8";
-        if constexpr (std::is_same<T, uchar8>::value) type = "uchar8";
-        if constexpr (std::is_same<T, int8>::value)   type = "int8";
-        if constexpr (std::is_same<T, uint8>::value)  type = "uint8";
-        if constexpr (std::is_same<T, int16>::value)  type = "int16";
-        if constexpr (std::is_same<T, uint16>::value) type = "uint16";
-        if constexpr (std::is_same<T, int32>::value)  type = "int32";
-        if constexpr (std::is_same<T, uint32>::value) type = "uint32";
-        if constexpr (std::is_same<T, int64>::value)  type = "int64";
-        if constexpr (std::is_same<T, uint64>::value) type = "uint64";
-        if constexpr (std::is_same<T, float32>::value) type = "float32";
-        //if constexpr (std::is_same<T, float32>::value) _children.push_back({ "float32", float(v) });
-        //this->add(nd);
-        //markup_node.add(<#const node &nd#>)
-        
-//        std::string g = std::to_string(v);
-//        if constexpr (std::is_same<T, float32>::value) g = std::to_string(float(v));
+//      if constexpr (is_type<T>::value) {
+//        std::string type;
+//        if constexpr (std::is_same<T, char8>::value)  type = "char8";
+//        if constexpr (std::is_same<T, uchar8>::value) type = "uchar8";
+//        if constexpr (std::is_same<T, int8>::value)   type = "int8";
+//        if constexpr (std::is_same<T, uint8>::value)  type = "uint8";
+//        if constexpr (std::is_same<T, int16>::value)  type = "int16";
+//        if constexpr (std::is_same<T, uint16>::value) type = "uint16";
+//        if constexpr (std::is_same<T, int32>::value)  type = "int32";
+//        if constexpr (std::is_same<T, uint32>::value) type = "uint32";
+//        if constexpr (std::is_same<T, int64>::value)  type = "int64";
+//        if constexpr (std::is_same<T, uint64>::value) type = "uint64";
+//        if constexpr (std::is_same<T, float32>::value) type = "float32";
+//        //if constexpr (std::is_same<T, float32>::value) _children.push_back({ "float32", float(v) });
+//        //this->add(nd);
+//        //markup_node.add(<#const node &nd#>)
 //        
-//        std::stringstream ss;
-//        ss << type + "(" << g  << ")";// << std::hex << int(v.memoryOffset());
-//        std::string value = ss.str();
-//        nd._value = value;
-        
-      } else if constexpr (is_pointer<T>::value) {
-//        std::stringstream ss;
-//        ss << type + "(" << std::to_string(v) << ") @ " << std::hex << int(v.memoryOffset());
-//        std::string value = ss.str();
-//        nd._value = value;
-        
-//        try {
-//          memory::TargetAddressType addr = v.pointeeAddress();
-//          std::stringstream ss;
-//          ss << "0x" << std::uppercase << std::setfill('0') << std::setw(sizeof(memory::TargetAddressType)) << std::hex << addr;
-//
-//          node ptr(_serializer, "pointer", ss.str());
-//          if (pointerResolve) {
-//            if (_serializer->pointers.find(addr) == _serializer->pointers.end()) {
-//              v->serialize(ptr);
-//              _serializer->pointers[addr] = v;
-//            }
-//          }
-//          nd.add_child(ptr);
-//        } catch (bad_pointer& e) {
-//
-//        }
-        
-        //this->add(nd);
-      } else if constexpr (std::is_array<T>::value) {
-        
-      } else {
-        nd._value = typeid(decltype(v)).name();
-        v.serialize(nd);
-      }
+////        std::string g = std::to_string(v);
+////        if constexpr (std::is_same<T, float32>::value) g = std::to_string(float(v));
+////        
+////        std::stringstream ss;
+////        ss << type + "(" << g  << ")";// << std::hex << int(v.memoryOffset());
+////        std::string value = ss.str();
+////        nd._value = value;
+//        
+//      } else if constexpr (is_pointer<T>::value) {
+////        std::stringstream ss;
+////        ss << type + "(" << std::to_string(v) << ") @ " << std::hex << int(v.memoryOffset());
+////        std::string value = ss.str();
+////        nd._value = value;
+//        
+////        try {
+////          memory::TargetAddressType addr = v.pointeeAddress();
+////          std::stringstream ss;
+////          ss << "0x" << std::uppercase << std::setfill('0') << std::setw(sizeof(memory::TargetAddressType)) << std::hex << addr;
+////
+////          node ptr(_serializer, "pointer", ss.str());
+////          if (pointerResolve) {
+////            if (_serializer->pointers.find(addr) == _serializer->pointers.end()) {
+////              v->serialize(ptr);
+////              _serializer->pointers[addr] = v;
+////            }
+////          }
+////          nd.add_child(ptr);
+////        } catch (bad_pointer& e) {
+////
+////        }
+//        
+//        //this->add(nd);
+//      } else if constexpr (std::is_array<T>::value) {
+//        
+//      } else {
+//        nd._value = typeid(decltype(v)).name();
+//        v.serialize(nd);
+//      }
       
       add_child(nd);
     }
