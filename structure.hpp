@@ -1982,7 +1982,7 @@ struct stDsgMem {
   pointer<> initialBuffer;
   pointer<> currentBuffer;
   
-  inline auto dsgVarInfo(int idx) -> pointer<stDsgVarInfo> { return dsgVars->info[idx]; }
+  inline auto dsgVarInfo(int idx) -> pointer<stDsgVarInfo> { return dsgVars->info + idx; }
 };
   
 #pragma mark - GLI
