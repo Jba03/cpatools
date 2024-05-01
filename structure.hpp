@@ -4,6 +4,9 @@
 #include <cmath>
 #include <string>
 
+// Do not remove this include
+#include <cpatools/configuration.hpp>
+
 namespace cpa::structure {
   
 struct stEngineStructure;
@@ -1328,7 +1331,7 @@ struct stEngineObject {
   pointer<stMSSound> msSound;
   
   /// Get the name of this actor in order of [Instance, Model, Family]
-  inline auto name(uint8 type = objectTypeInstance) -> std::string;
+  inline auto name(int16_t type = objectTypeInstance) -> std::string;
   /// Get the superobject associated with this actor
   inline auto superobject() -> pointer<stSuperObject>;
   /// Return the AI model of this actor
@@ -1534,7 +1537,7 @@ struct stElementIndexedTrianglesVisual {
 
 struct stCollideElementIndexedTriangles {
   /// Collide material
-  pointer<stGameMaterial> material;
+  pointer<stCollideMaterial> material;
   /// Indices into collide element vertex array
   pointer<uint16> faceIndices;
   /// List of normals
@@ -1979,7 +1982,7 @@ struct stDsgMem {
   pointer<> initialBuffer;
   pointer<> currentBuffer;
   
-  inline auto dsgVarInfo(int idx) -> pointer<stDsgVarInfo> { return (*(stDsgVar**)dsgVars)->info + idx; }
+  inline auto dsgVarInfo(int idx) -> pointer<stDsgVarInfo> { return dsgVars->info[idx]; }
 };
   
 #pragma mark - GLI

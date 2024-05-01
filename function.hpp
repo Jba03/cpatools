@@ -14,10 +14,10 @@ auto structure::stEngineStructure::loadLevel(std::string levelName) -> void {
 
 #pragma mark EngineObject
 
-auto structure::stEngineObject::name(uint8 type) -> std::string {
+auto structure::stEngineObject::name(int16_t type) -> std::string {
   std::string name;
   extern ObjectNameResolver nameResolver;
-  for (auto i : {stdGame->instanceType, stdGame->modelType, stdGame->familyType}) {
+  for (int i : {stdGame->instanceType, stdGame->modelType, stdGame->familyType}) {
     name = nameResolver(type, &i);
     if (name != "Invalid name") break;
   }
@@ -42,7 +42,7 @@ auto structure::stEngineObject::dsgMem() -> pointer<stDsgMem> {
 auto structure::stEngineObject::dsgVar(int idx, uint32_t* type) -> pointer<> {
   try {
     pointer<stDsgMem> mem = brain->mind->dsgMem;
-    if (idx > (*(stDsgVar**)mem->dsgVars)->infoLength) return nullptr;
+    if (idx > mem->dsgVars->infoLength) return nullptr;
     pointer<stDsgVarInfo> info = mem->dsgVarInfo(idx);
     if (type) *type = info->type;
     return (uint8_t*)mem->currentBuffer + info->memoryOffset;

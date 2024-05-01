@@ -176,6 +176,8 @@ struct doublepointer : pointer_id {
   template<typename X = T> operator pointer<X>() { return pointee<X>(); }
   operator bool() { return ptr.valid(); }
   
+  inline auto memoryOffset() -> address { return address(&ptr); }
+  
   using UnderlyingType = T;
   
 private:
