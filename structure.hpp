@@ -100,133 +100,77 @@ using Index3D = uint16;
 
 #pragma mark - Common types
   
-template<typename T = float32>
-union vector2 {
-  vector2() {};
-  vector2(T _x, T _y) : x(_x), y(_y) {}
+template<unsigned N, typename T = float32>
+struct vector {
+  template<typename... Args, std::enable_if_t<sizeof...(Args) == N && std::conjunction_v<std::is_convertible<Args, float>...>>* = nullptr>
+  vector(Args... args) : data { static_cast<float>(args)... } { /* ... */ }
+  template<unsigned N2> vector(std::array<float32, N2>& vec) { for (auto i : range(N)) data[i] = vec[i]; }
+  vector() { /* ... */}
   
-  auto dot(vector2 v) const { float s = 0.0f; for (auto i : range(2)) s += data[i] * v[i]; return s; }
-  auto square() const { return dot(*this); }
-  auto length() const { return sqrt(square()); }
-  auto& operator [](auto i) { return data[i]; }
-  
-  auto operator +(vector2 v) { vector2 result; for(auto i : range(2)) result[i] = data[i] + v[i]; return result; }
-  auto operator -(vector2 v) { vector2 result; for(auto i : range(2)) result[i] = data[i] - v[i]; return result; }
-  auto operator *(vector2 v) { vector2 result; for(auto i : range(2)) result[i] = data[i] * v[i]; return result; }
-  auto operator /(vector2 v) { vector2 result; for(auto i : range(2)) result[i] = data[i] / v[i]; return result; }
-  auto operator *(float   s) { vector2 result; for(auto i : range(2)) result[i] = data[i] *    s; return result; }
-  auto operator /(float   s) { vector2 result; for(auto i : range(2)) result[i] = data[i] /    s; return result; }
-  auto operator -()          { vector2 result; for(auto i : range(2)) result[i] =-data[i];        return result; }
-  auto operator >(vector2 v) { bool result = true; for(auto i : range(2)) if (data[i] <= v[i]) result = false; return result; }
-  auto operator <(vector2 v) { bool result = true; for(auto i : range(2)) if (data[i] >= v[i]) result = false; return result; }
-  auto operator>=(vector2 v) { bool result = true; for(auto i : range(2)) if (data[i] <  v[i]) result = false; return result; }
-  auto operator<=(vector2 v) { bool result = true; for(auto i : range(2)) if (data[i] >  v[i]) result = false; return result; }
-  
-  auto normalize() {
-    vector2 result = *this;
-    if(length() == 0) return result;
-    float scale = 1.0f / length();
-    for(auto i : range(2)) result[i] *= scale;
-    return result;
+  inline auto dot(vector<N> v) const {
+    float s = 0.0f;
+    for (auto i : range(N))
+      s += data[i] * v[i];
+    return s;
   }
   
-  struct { T x = 0.0f, y = 0.0f; };
+  inline auto square() const {
+    return dot(*this);
+  }
   
-private:
-  struct { std::array<T, 2> data; };
-};
-
-template< typename T = float32>
-union vector3 {
-  vector3() {}
-  vector3(T _x, T _y, T _z) : x(_x), y(_y), z(_z) {}
+  inline auto length() const {
+    return sqrt(square());
+  }
   
-  auto dot(vector3 v) const { float s = 0.0f; for (auto i : range(3)) s += data[i] * v[i]; return s; }
-  auto square() const { return dot(*this); }
-  auto length() const { return sqrt(square()); }
-  auto& operator [](auto i) { return data[i]; }
-  
-  auto operator +(vector3 v) { vector3 result; for(auto i : range(3)) result[i] = data[i] + v[i]; return result; }
-  auto operator -(vector3 v) { vector3 result; for(auto i : range(3)) result[i] = data[i] - v[i]; return result; }
-  auto operator *(vector3 v) { vector3 result; for(auto i : range(3)) result[i] = data[i] * v[i]; return result; }
-  auto operator /(vector3 v) { vector3 result; for(auto i : range(3)) result[i] = data[i] / v[i]; return result; }
-  auto operator *(float   s) { vector3 result; for(auto i : range(3)) result[i] = data[i] *    s; return result; }
-  auto operator /(float   s) { vector3 result; for(auto i : range(3)) result[i] = data[i] /    s; return result; }
-  auto operator -()          { vector3 result; for(auto i : range(3)) result[i] =-data[i];        return result; }
-  auto operator >(vector3 v) { bool result = true; for(auto i : range(3)) if (data[i] <= v[i]) result = false; return result; }
-  auto operator <(vector3 v) { bool result = true; for(auto i : range(3)) if (data[i] >= v[i]) result = false; return result; }
-  auto operator>=(vector3 v) { bool result = true; for(auto i : range(3)) if (data[i] <  v[i]) result = false; return result; }
-  auto operator<=(vector3 v) { bool result = true; for(auto i : range(3)) if (data[i] >  v[i]) result = false; return result; }
-  auto operator==(vector3 v) { return x == v.x && y == v.y && z == v.z; }
-  auto operator!=(vector3 v) { return x != v.x && y != v.y && z != v.z; }
-  auto xy() -> vector2<T> { return vector2(x, y); }
-  
-  auto cross(vector3 v) -> vector3 {
-    vector3 result;
-    result.x = data[1] * v.data[2] - data[2] * v.data[1];
-    result.y = data[2] * v.data[0] - data[0] * v.data[2];
-    result.z = data[0] * v.data[1] - data[1] * v.data[0];
+  auto cross(vector<3> v) {
+    vector<3> result;
+    result.x() = data[1] * v.data[2] - data[2] * v.data[1];
+    result.y() = data[2] * v.data[0] - data[0] * v.data[2];
+    result.z() = data[0] * v.data[1] - data[1] * v.data[0];
     return result;
   }
   
   auto normalize() {
-    vector3 result = *this;
+    vector result = *this;
     if(length() == 0) return result;
     float scale = 1.0f / length();
-    for(auto i : range(3)) result[i] *= scale;
-    return result;
-  }
-
-  bool isNullVector() {
-    return x == 0 && y == 0 && z == 0;
-  }
-  
-  struct { T x = 0.0f, y = 0.0f, z = 0.0f; };
-  
-private:
-  struct { std::array<T, 3> data; };
-};
-
-template< typename T = float32>
-union vector4 {
-  vector4() {}
-  vector4(T _x, T _y, T _z, T _w) : x(_x), y(_y), z(_z), w(_w) { }
-  
-  auto dot(vector4 v) const { float s = 0.0f; for (auto i : range(4)) s += data[i] * v[i]; return s; }
-  auto square() const { return dot(*this); }
-  auto length() const { return sqrt(square()); }
-  auto& operator [](auto i) { return data[i]; }
-  
-  auto operator +(vector4 v) { vector4 result; for(auto i : range(4)) result[i] = data[i] + v[i]; return result; }
-  auto operator -(vector4 v) { vector4 result; for(auto i : range(4)) result[i] = data[i] - v[i]; return result; }
-  auto operator *(vector4 v) { vector4 result; for(auto i : range(4)) result[i] = data[i] * v[i]; return result; }
-  auto operator /(vector4 v) { vector4 result; for(auto i : range(4)) result[i] = data[i] / v[i]; return result; }
-  auto operator *(float   s) { vector4 result; for(auto i : range(4)) result[i] = data[i] *    s; return result; }
-  auto operator /(float   s) { vector4 result; for(auto i : range(4)) result[i] = data[i] /    s; return result; }
-  auto operator -()          { vector4 result; for(auto i : range(4)) result[i] =-data[i];        return result; }
-  auto operator >(vector4 v) { bool result = true; for(auto i : range(4)) if (data[i] <= v[i]) result = false; return result; }
-  auto operator <(vector4 v) { bool result = true; for(auto i : range(4)) if (data[i] >= v[i]) result = false; return result; }
-  auto operator>=(vector4 v) { bool result = true; for(auto i : range(4)) if (data[i] <  v[i]) result = false; return result; }
-  auto operator<=(vector4 v) { bool result = true; for(auto i : range(4)) if (data[i] >  v[i]) result = false; return result; }
-  auto xy() -> vector2<T> { return vector2(x, y); }
-  auto xyz() -> vector3<T> { return vector3(x, y, z); }
-  
-  auto normalize() {
-    vector4 result = *this;
-    if(length() == 0) return result;
-    float scale = 1.0f / length();
-    for(auto i : range(4)) result[i] *= scale;
+    for(auto i : range(N)) result[i] *= scale;
     return result;
   }
   
-  struct { T x = 0.0f, y = 0.0f, z = 0.0f, w = 0.0f; };
+  inline auto isNullVector() -> bool {
+    return x() == 0 && y() == 0 && z() == 0;
+  }
+  
+  inline auto x() -> T& { return data[0]; }
+  inline auto y() -> T& { return data[1]; }
+  inline auto z() -> T& { return data[2]; }
+  inline auto w() -> T& { return data[3]; }
+  inline auto xy() -> vector<2> { return vector<2>(x(), y()); }
+  inline auto xyz() -> vector<3> { return vector<3>(x(), y(), z()); }
+  inline auto& operator[](auto i) { return data[i]; }
+  
+  auto operator +(vector v) { vector result; for(auto i : range(N)) result[i] = data[i] + v[i]; return result; }
+  auto operator -(vector v) { vector result; for(auto i : range(N)) result[i] = data[i] - v[i]; return result; }
+  auto operator *(vector v) { vector result; for(auto i : range(N)) result[i] = data[i] * v[i]; return result; }
+  auto operator /(vector v) { vector result; for(auto i : range(N)) result[i] = data[i] / v[i]; return result; }
+  auto operator *(auto   s) { vector result; for(auto i : range(N)) result[i] = data[i] *    s; return result; }
+  auto operator /(auto   s) { vector result; for(auto i : range(N)) result[i] = data[i] /    s; return result; }
+  auto operator -()         { vector result; for(auto i : range(N)) result[i] =-data[i];        return result; }
+  auto operator >(vector v) { bool result = true; for(auto i : range(N)) if (data[i] <= v[i]) result = false; return result; }
+  auto operator <(vector v) { bool result = true; for(auto i : range(N)) if (data[i] >= v[i]) result = false; return result; }
+  auto operator>=(vector v) { bool result = true; for(auto i : range(N)) if (data[i] <  v[i]) result = false; return result; }
+  auto operator<=(vector v) { bool result = true; for(auto i : range(N)) if (data[i] >  v[i]) result = false; return result; }
+  auto operator==(vector v) { bool result = true; for(auto i : range(N)) if (data[i] != v[i]) result = false; return result; }
+  auto operator!=(vector v) { bool result = true; for(auto i : range(N)) if (data[i] == v[i]) result = false; return result; }
+  
 private:
-  struct { std::array<T, 4> data; };
+  std::array<T, N> data;
 };
 
-using stVector2D = vector2<float32>;
-using stVector3D = vector3<float32>;
-using stVector4D = vector4<float32>;
+using stVector2D = vector<2>;
+using stVector3D = vector<3>;
+using stVector4D = vector<4>;
 
 template<unsigned Rows, unsigned Columns, typename T>
 struct matrix {
@@ -278,7 +222,7 @@ struct matrix {
   }
   
   auto operator* (stVector3D v) -> stVector4D {
-    return ((*this) * stVector4D(v.x, v.y, v.z, 1.0f));
+    return ((*this) * stVector4D(v.x(), v.y(), v.z(), 1.0f));
   }
   
   static inline auto make_translation(stVector3D p) {
@@ -315,17 +259,17 @@ struct matrix {
     float nnz = (-n).dot(eye);
     
     matrix<4,4,T> result;
-    result(0,0) = u.x;
-    result(0,1) = v.x;
-    result(0,2) = n.x;
+    result(0,0) = u.x();
+    result(0,1) = v.x();
+    result(0,2) = n.x();
     result(0,3) = 0.0f;
-    result(1,0) = u.y;
-    result(1,1) = v.y;
-    result(1,2) = n.y;
+    result(1,0) = u.y();
+    result(1,1) = v.y();
+    result(1,2) = n.y();
     result(1,3) = 0.0f;
-    result(2,0) = u.z;
-    result(2,1) = v.z;
-    result(2,2) = n.z;
+    result(2,0) = u.z();
+    result(2,1) = v.z();
+    result(2,2) = n.z();
     result(2,3) = 0.0f;
     result(3,0) = nnx;
     result(3,1) = nny;
@@ -485,7 +429,7 @@ struct stTransform {
   }
   
   auto operator*(stVector3D v) -> stVector3D {
-    return (matrix * stVector4D(v.x, v.y, v.z, 1.0f)).xyz();
+    return (matrix * stVector4D(v.x(), v.y(), v.z(), 1.0f)).xyz();
   }
   
   auto operator*(stVector4D v) -> stVector4D {

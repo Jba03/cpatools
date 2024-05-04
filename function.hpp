@@ -61,11 +61,11 @@ auto structure::stEngineObject::speed() -> stVector3D {
 
 auto structure::stEngineObject::horizontalSpeed() -> float {
   auto s = speed();
-  return sqrt(s.x * s.x + s.y * s.y);
+  return sqrt(s.x() * s.x() + s.y() * s.y());
 }
 
 auto structure::stEngineObject::verticalSpeed() -> float {
-  return speed().z;
+  return speed().z();
 }
 
 #pragma mark - ZdxList
