@@ -1,6 +1,6 @@
 #pragma once
 
-//#include <cpatools/types.hpp>
+#include <cpatools/types.hpp>
 
 #include <iomanip>
 #include <iterator>
@@ -142,133 +142,64 @@ protected:
 
 namespace cpa {
 
-//static std::unordered_map<memory::TargetAddressType, bool> pointers;
-
+/// Serializer & datatype representation converter
 struct serializer {
   serializer() = default;
   
-  struct node : markup::node {
-    node() = default;
-    
-    node(markup::node& nd) {
-      _name = nd.name();
-      _value = nd.value();
-    }
-    
-    node(serializer* s, std::string name) {
-      _serializer = s;
-      _name = name;
-    }
+  /// Structure cross-platform block representation
+  struct block {
+    enum type {
+      Integer,
+      Real,
+      Pointer,
+    };
     
     template<typename T>
-    node(serializer* s, std::string name, T value) {
-      _serializer = s;
-      _name = name;
-      _value = std::to_string(value);
-      //markup_node = markup::node(_name, _value);
-    }
-    
-    node(serializer* s, std::string name, std::string value) {
-      _serializer = s;
-      _name = name;
-      _value = value;
-    }
-    
-    
-    auto _add(node nd) -> void {
-      _children.emplace_back(nd);
-    }
-    
-    // typeless pointer
-//    auto add(const std::string& name, pointer<> v) -> void {
-//      node ptr(_serializer, "pointer", v.pointeeAddress().physicalAddress());
-//      add_child(ptr);
-//    }
-    
-    // typeless pointer
-//    auto _add(const std::string& name, pointer<>& v) -> void {
-//      node nd(name);
-//      add(nd);
-//    }
-    
-    template<typename T>
-    auto add(const std::string& name, T& v, bool pointerResolve = true) -> void {
-      node nd(_serializer, name);
-//      if constexpr (is_type<T>::value) {
-//        std::string type;
-//        if constexpr (std::is_same<T, char8>::value)  type = "char8";
-//        if constexpr (std::is_same<T, uchar8>::value) type = "uchar8";
-//        if constexpr (std::is_same<T, int8>::value)   type = "int8";
-//        if constexpr (std::is_same<T, uint8>::value)  type = "uint8";
-//        if constexpr (std::is_same<T, int16>::value)  type = "int16";
-//        if constexpr (std::is_same<T, uint16>::value) type = "uint16";
-//        if constexpr (std::is_same<T, int32>::value)  type = "int32";
-//        if constexpr (std::is_same<T, uint32>::value) type = "uint32";
-//        if constexpr (std::is_same<T, int64>::value)  type = "int64";
-//        if constexpr (std::is_same<T, uint64>::value) type = "uint64";
-//        if constexpr (std::is_same<T, float32>::value) type = "float32";
-//        //if constexpr (std::is_same<T, float32>::value) _children.push_back({ "float32", float(v) });
-//        //this->add(nd);
-//        //markup_node.add(<#const node &nd#>)
-//        
-////        std::string g = std::to_string(v);
-////        if constexpr (std::is_same<T, float32>::value) g = std::to_string(float(v));
-////        
-////        std::stringstream ss;
-////        ss << type + "(" << g  << ")";// << std::hex << int(v.memoryOffset());
-////        std::string value = ss.str();
-////        nd._value = value;
-//        
-//      } else if constexpr (is_pointer<T>::value) {
-////        std::stringstream ss;
-////        ss << type + "(" << std::to_string(v) << ") @ " << std::hex << int(v.memoryOffset());
-////        std::string value = ss.str();
-////        nd._value = value;
-//        
-////        try {
-////          memory::TargetAddressType addr = v.pointeeAddress();
-////          std::stringstream ss;
-////          ss << "0x" << std::uppercase << std::setfill('0') << std::setw(sizeof(memory::TargetAddressType)) << std::hex << addr;
-////
-////          node ptr(_serializer, "pointer", ss.str());
-////          if (pointerResolve) {
-////            if (_serializer->pointers.find(addr) == _serializer->pointers.end()) {
-////              v->serialize(ptr);
-////              _serializer->pointers[addr] = v;
-////            }
-////          }
-////          nd.add_child(ptr);
-////        } catch (bad_pointer& e) {
-////
-////        }
-//        
-//        //this->add(nd);
-//      } else if constexpr (std::is_array<T>::value) {
-//        
-//      } else {
-//        nd._value = typeid(decltype(v)).name();
-//        v.serialize(nd);
-//      }
+    void pointer(pointer<T>& v) {
+      void* data = v;
       
-      add_child(nd);
     }
     
-    void type(std::string type) {
-      _value = type;
-    }
+    union {
+      uint64_t integer;
+      float real;
+      void* pointer;
+    } data;
     
   private:
-    serializer* _serializer;
+    std::vector<block> blocks;
   };
   
-  operator node&() {
-    return _root;
+//  operator node&() {
+//    return _root;
+//  }
+  
+  template<typename T>
+  void pointer(pointer<T>& v) {
+    void* data = v;
   }
   
-  //std::unordered_map<memory::TargetAddressType, pointer<>> pointers;
+  template<typename T>
+  void integer(T& v) {
+    uint64_t i = uint64_t(v);
+    //node nd(_serializer, std::to_string(i));
+  }
+  
+  template<typename T>
+  void real(T& v) {
+    
+  }
+  
+  template<typename T>
+  void structure(T& v) {
+    //_children.emplace_back(nd);
+  }
+  
+  //_children.emplace_back(nd);
+  std::unordered_map<memory::target_address_type, block*> pointers;
   
 private:
-  node _root { this, "root" };
+  //node _root { this, "root" };
 };
 
 }

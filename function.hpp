@@ -42,7 +42,7 @@ auto structure::stEngineObject::dsgMem() -> pointer<stDsgMem> {
 auto structure::stEngineObject::dsgVar(int idx, uint32_t* type) -> pointer<> {
   try {
     pointer<stDsgMem> mem = brain->mind->dsgMem;
-    if (idx > mem->dsgVars->infoLength) return nullptr;
+    if (idx > (*mem->dsgVars)->infoLength) return nullptr;
     pointer<stDsgVarInfo> info = mem->dsgVarInfo(idx);
     if (type) *type = info->type;
     return (uint8_t*)mem->currentBuffer + info->memoryOffset;
@@ -81,27 +81,27 @@ auto structure::stZdxList::all() -> std::vector<pointer<stCollideObject>> {
 
 auto structure::stSuperObject::typeName() -> std::string {
   switch (type) {
-    case None:
+    case superobjectTypeNone:
       return "Dummy SuperObject";
-    case World:
+    case superobjectTypeWorld:
       return "World";
-    case Actor:
+    case superobjectTypeActor:
       return "Actor";
-    case Sector:
+    case superobjectTypeSector:
       return "Sector";
-    case PhysicalObject:
+    case superobjectTypePhysicalObject:
       return "PhysicalObject";
-    case PhysicalObjectMirror:
+    case superobjectTypePhysicalObjectMirror:
       return "PhysicalObject.Mirror";
-    case IPO:
+    case superobjectTypeIPO:
       return "IPO";
-    case IPOMirror:
+    case superobjectTypeIPOMirror:
       return "IPO.Mirror";
-    case SpecialEffect:
+    case superobjectTypeSpecialEffect:
       return "SpecialEffect";
-    case NoAction:
+    case superobjectTypeNoAction:
       return "NoAction";
-    case Mirror:
+    case superobjectTypeMirror:
       return "Mirror";
     default:
       return "Invalid";
@@ -111,11 +111,11 @@ auto structure::stSuperObject::typeName() -> std::string {
 auto structure::stSuperObject::name(bool fullname) -> std::string {
   try {
     switch (type) {
-      case Actor:
+      case superobjectTypeActor:
         return actor->name();
-      case IPO:
+      case superobjectTypeIPO:
         return fullname ? ipo->name : ipo->name.lastPathComponent();
-      case Sector:
+      case superobjectTypeSector:
         return fullname ? sector->name : sector->name.lastPathComponent();
       default:
         return typeName();
@@ -132,37 +132,37 @@ auto structure::stSuperObject::position() -> stVector3D& {
     return globalTransform->translation();
   }
 }
-
-auto structure::stSuperObject::serialize(serializer::node& s) {
-  s.type("stSuperObject");
-  s(type)
-  s(data)
-  s(firstChild)
-  s(lastChild)
-  s(numChildren);
-  for (auto child : *this) s(child);
-  s.add("next", next, false);
-  s.add("prev", prev, false);
-  s.add("parent", parent, false);
-  s(localTransform);
-  s(globalTransform);
-  s(prevFrameProcessed);
-  s(drawFlags);
-  s(flags);
-  s(visualBBox);
-  s(collideBBox);
-  s(semiLookAt);
-  s(transparency);
-  s(outlineColor);
-  s(displayPriority);
-  s(ilstatus);
-  s(ambientColor);
-  s(parallelDirection);
-  s(parallelColor);
-  s(superimpose);
-  s(isSuperObject);
-  s(transition);
-}
+//
+//auto structure::stSuperObject::serialize(serializer::node& s) {
+//  s.type("stSuperObject");
+//  s(type)
+//  s(data)
+//  s(firstChild)
+//  s(lastChild)
+//  s(numChildren);
+//  for (auto child : *this) s(child);
+//  s.add("next", next, false);
+//  s.add("prev", prev, false);
+//  s.add("parent", parent, false);
+//  s(localTransform);
+//  s(globalTransform);
+//  s(prevFrameProcessed);
+//  s(drawFlags);
+//  s(flags);
+//  s(visualBBox);
+//  s(collideBBox);
+//  s(semiLookAt);
+//  s(transparency);
+//  s(outlineColor);
+//  s(displayPriority);
+//  s(ilstatus);
+//  s(ambientColor);
+//  s(parallelDirection);
+//  s(parallelColor);
+//  s(superimpose);
+//  s(isSuperObject);
+//  s(transition);
+//}
 
 #pragma mark - Static functions
 

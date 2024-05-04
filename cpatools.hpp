@@ -1,4 +1,4 @@
-/// In *one* source file only, define CPATOOLS_IMPLEMENTATION before you include this file.
+/* In _one_ source file only, define CPATOOLS_IMPLEMENTATION before you include this file. */
 
 #include <cpatools/common.hpp>
 #include <cpatools/types.hpp>

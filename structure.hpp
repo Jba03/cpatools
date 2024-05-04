@@ -7,6 +7,8 @@
 // Do not remove this include
 #include <cpatools/configuration.hpp>
 
+#include <cpatools/serialize.hpp>
+
 namespace cpa::structure {
   
 struct stEngineStructure;
@@ -72,8 +74,8 @@ struct stCollideMaterial; // defined in GMT under previous versions
 
 // GMT, GLI, GLD
 struct stGameMaterial;
-struct stVertex2D;
-struct stCamera;
+struct stVertex2DGLI;
+struct stCameraGLI;
 struct stTexture;
 struct stAnimatedTextureNode;
 
@@ -176,11 +178,7 @@ union vector3 {
   }
 
   bool isNullVector() {
-      return x == 0 && y == 0 && z == 0;
-  }
-  
-  auto serialize(serializer::node& nd) {
-    
+    return x == 0 && y == 0 && z == 0;
   }
   
   struct { T x = 0.0f, y = 0.0f, z = 0.0f; };
@@ -219,10 +217,6 @@ union vector4 {
     float scale = 1.0f / length();
     for(auto i : range(4)) result[i] *= scale;
     return result;
-  }
-  
-  auto serialize(serializer::node& nd) {
-    
   }
   
   struct { T x = 0.0f, y = 0.0f, z = 0.0f, w = 0.0f; };
@@ -672,12 +666,12 @@ struct stEngineStructure {
   int16 gldDevice;
   int16 gldViewport[5];
   padding(5 * 28 * 4) /* viewport attributes */
-  pointer<stCamera> viewportCamera[5];
+  pointer<stCameraGLI> viewportCamera[5];
   int16 gldFixViewport[5];
   padding(2)
   padding(5 * 28 * 4) /* fix viewport attributes */
   padding(5 * 2 * 4) /* fix 3d attributes */
-  pointer<stCamera> fixCamera[5];
+  pointer<stCameraGLI> fixCamera[5];
   padding(5 * 2 * 4) /* game 3d attributes */
   pointer<> viewportArray;
   stDoublyLinkedList<> cameraList;
@@ -1346,8 +1340,6 @@ struct stEngineObject {
   inline auto horizontalSpeed() -> float;
   /// Get the linear vertical speed of this actor
   inline auto verticalSpeed() -> float;
-  /// Serialize this structure
-  inline auto serialize(serializer::node& s);
 };
   
 #pragma mark - SECT
@@ -1729,7 +1721,7 @@ struct stPhysicalObject {
 };
   
 #pragma mark - IPO
-  
+
 struct stInstantiatedPhysicalObject {
   pointer<stPhysicalObject> physicalObject;
   pointer<> currentRadiosity;
@@ -1744,21 +1736,19 @@ struct stInstantiatedPhysicalObject {
   
 #pragma mark - stSuperObject
 
+#define superobjectTypeNone                 (0 << 0)
+#define superobjectTypeWorld                (1 << 0)
+#define superobjectTypeActor                (1 << 1)
+#define superobjectTypeSector               (1 << 2)
+#define superobjectTypePhysicalObject       (1 << 3)
+#define superobjectTypePhysicalObjectMirror (1 << 4)
+#define superobjectTypeIPO                  (1 << 5)
+#define superobjectTypeIPOMirror            (1 << 6)
+#define superobjectTypeSpecialEffect        (1 << 7)
+#define superobjectTypeNoAction             (1 << 8)
+#define superobjectTypeMirror               (1 << 9)
+
 struct stSuperObject {
-  
-  enum type : uint32_t {
-    None                 = (0 << 0),
-    World                = (1 << 0),
-    Actor                = (1 << 1),
-    Sector               = (1 << 2),
-    PhysicalObject       = (1 << 3),
-    PhysicalObjectMirror = (1 << 4),
-    IPO                  = (1 << 5),
-    IPOMirror            = (1 << 6),
-    SpecialEffect        = (1 << 7),
-    NoAction             = (1 << 8),
-    Mirror               = (1 << 9),
-  };
   
   uint32 type;
   
@@ -1796,6 +1786,35 @@ struct stSuperObject {
   uint8 transition;
   padding(1)
   
+  auto serialize(serializer& s) {
+//    s.integer(type);
+//    s.pointer(data);
+//    s.pointer(firstChild);
+//    s.pointer(lastChild);
+//    s.integer(numChildren);
+//    s.pointer(next);
+//    s.pointer(prev);
+//    s.pointer(parent);
+//    s.pointer(localTransform);
+//    s.pointer(globalTransform);
+//    s.integer(prevFrameProcessed);
+//    s.integer(drawFlags);
+//    s.integer(flags);
+//    s.pointer(visualBBox);
+//    s.pointer(collideBBox);
+//    s.structure(semiLookAt);
+//    s.real(transparency);
+//    s.integer(outlineColor);
+//    s.integer(displayPriority);
+//    s.integer(ilstatus);
+//    s.structure(ambientColor);
+//    s.structure(parallelDirection);
+//    s.structure(parallelColor);
+//    s.integer(superimpose);
+//    s.integer(isSuperObject);
+//    s.integer(transition);
+  }
+  
   struct iterator {
     iterator(pointer<stSuperObject> start) : obj(start) { /* ... */ }
     auto operator*() const -> pointer<stSuperObject> { return obj; }
@@ -1831,7 +1850,7 @@ struct stSuperObject {
   auto begin() const -> iterator { return firstChild; }
   auto end() const -> iterator { return lastChild; }
   //serialize
-  inline auto serialize(serializer::node&);
+  //inline auto serialize(serializer::node&);
   
 private:
   template <typename F, typename UserData>
@@ -1982,7 +2001,7 @@ struct stDsgMem {
   pointer<> initialBuffer;
   pointer<> currentBuffer;
   
-  inline auto dsgVarInfo(int idx) -> pointer<stDsgVarInfo> { return dsgVars->info + idx; }
+  inline auto dsgVarInfo(int idx) -> pointer<stDsgVarInfo> { return (*dsgVars)->info + idx; }
 };
   
 #pragma mark - GLI
@@ -2022,8 +2041,6 @@ struct stCameraGLI {
 };
   
 #pragma mark - WP
-  
-
 
 struct stWayPoint {
   stVector3D point;
