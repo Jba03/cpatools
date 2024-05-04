@@ -45,7 +45,7 @@ static inline T constexpr bswap(const T v) {
 }
 
 static inline auto memoryBound(memory::host_address_type addr) -> bool {
-  return addr >= static_cast<uint8_t*>(baseAddress) && addr <= static_cast<uint8_t*>(baseAddress) + size;
+  return intptr_t(addr) >= intptr_t(baseAddress) && intptr_t(addr) <= intptr_t(baseAddress) + size;
 }
   
 };
