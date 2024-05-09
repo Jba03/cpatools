@@ -152,6 +152,20 @@
 #define scriptNodeTypeCineRef           43 /* ? */
 #define scriptNodeTypeGraphRef          44
 
+#pragma mark Collide element types
+#define collideElementTypeIndexedTriangles    1
+#define collideElementTypeFacemap             2
+#define collideElementTypeSprite              3
+#define collideElementTypeTMesh               4
+#define collideElementTypePoints              5
+#define collideElementTypeLines               6
+#define collideElementTypeIndexedSpheres      7
+#define collideElementTypeAABB                8
+#define collideElementTypeCones               9
+#define collideElementTypeDeformationSetInfo  13
+#define collideElementTypeInvalid             0xFFFF
+
+#pragma mark Dynamics obstacle types
 #define dynamicsObstacleTypeNoObstacle     0x00000000
 #define dynamicsObstacleTypeGround         0x00000001
 #define dynamicsObstacleTypeWall           0x00000004
@@ -160,3 +174,19 @@
 #define dynamicsObstacleTypeForceMobile    0x00000080
 #define dynamicsObstacleTypeMobile         0x00010000
 #define dynamicsObstacleTypeError          0x80000000
+
+
+#pragma mark - Pointers -
+
+#define GCN_POINTER_ENGINE_STRUCTURE        0x803E7C0C
+#define GCN_POINTER_INPUT_STRUCTURE         0x8042F5A8
+#define GCN_POINTER_FIX                     0x804334CC
+#define GCN_POINTER_LVL                     0x804334D0
+#define GCN_POINTER_RND                     0x80436924
+#define GCN_POINTER_GHOST_MODE              0x805D8580
+#define GCN_POINTER_INACTIVE_DYNAMIC_WORLD  0x805D8594
+#define GCN_POINTER_FATHER_SECTOR           0x805D8598
+#define GCN_POINTER_DYNAMIC_WORLD           0x805D859C
+#define GCN_POINTER_ACTUAL_WORLD            0x805D85A0
+#define GCN_POINTER_MENU_SELECTION_V        0x805D884C
+#define GCN_POINTER_MENU_RUMBLEPAD          0x805D89B0

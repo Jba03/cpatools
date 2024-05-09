@@ -1,9 +1,10 @@
 #pragma once
 
-namespace cpa {
+namespace cpa::global {
+auto objectTypeNameLookup(int type, int idx) -> std::string;
+};
 
-/// Serialization
-#define s(what) s.add(#what, what);
+namespace cpa {
 
 #pragma mark EngineStructure
 
@@ -16,9 +17,9 @@ auto structure::stEngineStructure::loadLevel(std::string levelName) -> void {
 
 auto structure::stEngineObject::name(int16_t type) -> std::string {
   std::string name;
-  extern ObjectNameResolver nameResolver;
+  ///extern ObjectNameResolver nameResolver;
   for (int i : {stdGame->instanceType, stdGame->modelType, stdGame->familyType}) {
-    name = nameResolver(type, &i);
+    name = global::objectTypeNameLookup(type, i);
     if (name != "Invalid name") break;
   }
   
@@ -55,7 +56,7 @@ auto structure::stEngineObject::speed() -> stVector3D {
   try {
     return dynam->dynamics->base.previousSpeed;
   } catch (bad_pointer& e) {
-    return stVector3D();
+    return stVector3D(0.0f, 0.0f, 0.0f);
   }
 }
 
@@ -132,37 +133,6 @@ auto structure::stSuperObject::position() -> stVector3D& {
     return globalTransform->translation();
   }
 }
-//
-//auto structure::stSuperObject::serialize(serializer::node& s) {
-//  s.type("stSuperObject");
-//  s(type)
-//  s(data)
-//  s(firstChild)
-//  s(lastChild)
-//  s(numChildren);
-//  for (auto child : *this) s(child);
-//  s.add("next", next, false);
-//  s.add("prev", prev, false);
-//  s.add("parent", parent, false);
-//  s(localTransform);
-//  s(globalTransform);
-//  s(prevFrameProcessed);
-//  s(drawFlags);
-//  s(flags);
-//  s(visualBBox);
-//  s(collideBBox);
-//  s(semiLookAt);
-//  s(transparency);
-//  s(outlineColor);
-//  s(displayPriority);
-//  s(ilstatus);
-//  s(ambientColor);
-//  s(parallelDirection);
-//  s(parallelColor);
-//  s(superimpose);
-//  s(isSuperObject);
-//  s(transition);
-//}
 
 #pragma mark - Static functions
 
@@ -250,7 +220,7 @@ static auto segmentCollideObjectIntersect(pointer<structure::stCollideObject> co
     
     for (int i = 0; i < collObj->numElements; i++) {
       int16_t type = collObj->elementTypes[i];
-      if (type == collideObjectTypeIndexedTriangles) {
+      if (type == collideElementTypeIndexedTriangles) {
         pointer<structure::stCollideElementIndexedTriangles> element = ((structure::stCollideElementIndexedTriangles**)collObj->elements)[i];
         structure::stVector3D* vertices = collObj->vertices;
         uint16* indices = element->faceIndices;

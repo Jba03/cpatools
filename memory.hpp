@@ -32,8 +32,7 @@ static inline auto bswap64(uint64_t value) -> uint64_t {
 }
 
 /// Swap integral byteorder
-template<typename T>
-static inline T constexpr bswap(const T v) {
+template<typename T> static inline T constexpr bswap(const T v) {
   if constexpr (endianness != std::endian::native && std::is_integral<T>::value) {
     if constexpr (sizeof(T) == 1) return v;
     if constexpr (sizeof(T) == 2) return bswap16(v);

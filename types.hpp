@@ -197,6 +197,8 @@ struct pointer {
   inline auto operator-(auto offset) -> pointer { return (uint8_t*)pointee() - sizeof(T) * offset; }
   inline auto operator++()           -> pointer { return *this = *this + 1;                        }
   inline auto operator++(auto)       -> pointer { auto t = *this; *this = *this + 1; return t;     }
+  inline auto operator+=(auto offset)-> pointer { return (*this = *this + offset);                 }
+  inline auto operator-=(auto offset)-> pointer { return (*this = *this - offset);                 }
   
   template<typename S = T>
   inline auto operator==(const pointer<S> other) -> bool { return ptr == other.ptr; }

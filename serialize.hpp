@@ -145,6 +145,7 @@ namespace cpa {
 /// Serializer & datatype representation converter
 struct serializer {
   serializer() = default;
+  enum Mode { Convert, Serialize } mode;
   
   /// Structure cross-platform block representation
   struct block {
@@ -174,9 +175,24 @@ struct serializer {
 //    return _root;
 //  }
   
+  struct node {
+    enum type {
+      Integer,
+      Real,
+      Pointer,
+    };
+    
+    uint8_t* data = nullptr;
+    size_t size;
+  };
+  
   template<typename T>
   void pointer(pointer<T>& v) {
     void* data = v;
+    if (mode == Convert) {
+      // pointer expansion
+      //currentNode->
+    }
   }
   
   template<typename T>
@@ -199,6 +215,8 @@ struct serializer {
   std::unordered_map<memory::target_address_type, block*> pointers;
   
 private:
+  node* currentNode;
+  
   //node _root { this, "root" };
 };
 

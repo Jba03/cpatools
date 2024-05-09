@@ -10,12 +10,14 @@
 #include <cpatools/serialize.hpp>
 
 namespace cpa::structure {
-  
+
 struct stEngineStructure;
 struct stEngineTimer;
 struct stCineManager;
 struct stLanguageStructure;
 struct stRandom;
+struct stAlways;
+struct stObjectType;
 
 // IPT
 struct stInputStructure;
@@ -182,8 +184,6 @@ struct matrix {
     }
   };
   
-  T& operator()(auto row, auto col) { return m[col + row * Columns]; }
-  
   static auto identity() {
     matrix result;
     for (auto y : range(Rows)) {
@@ -194,8 +194,16 @@ struct matrix {
     return result;
   }
   
+  inline auto operator()(auto row, auto col) -> T& {
+    return m[col + row * Columns];
+  }
+  
+  inline auto operator[](auto index) -> T& {
+    return m[index];
+  }
+  
   template <unsigned R, unsigned C>
-  auto operator* (matrix<R, C, T> src) {
+  auto operator*(matrix<R, C, T> src) {
     static_assert(Columns == C);
     matrix<Rows, Columns, T> result;
     for (auto y : range(Rows)) {
@@ -210,7 +218,7 @@ struct matrix {
     return result;
   }
   
-  auto operator* (stVector4D v) -> stVector4D {
+  auto operator*(stVector4D v) -> stVector4D {
     stVector4D result;
     for (auto y : range(Rows)) {
       result[y] = 0.0f;
@@ -221,23 +229,23 @@ struct matrix {
     return result;
   }
   
-  auto operator* (stVector3D v) -> stVector4D {
+  auto operator*(stVector3D v) -> stVector4D {
     return ((*this) * stVector4D(v.x(), v.y(), v.z(), 1.0f));
   }
   
-  static inline auto make_translation(stVector3D p) {
+  static auto make_translation(stVector3D p) {
     matrix result = identity();
     for (auto i : range(3)) result(Rows-1,i) = p[i];
     return result;
   }
   
-  static inline auto make_scale(stVector3D p){
+  static auto make_scale(stVector3D p){
     matrix result = identity();
     for (auto i : range(3)) result(i,i) = p[i];
     return result;
   }
   
-  static inline auto make_perspective(float fovY, float aspect, float near, float far) {
+  static auto make_perspective(float fovY, float aspect, float near, float far) {
     float ct = 1.0f / std::tan(fovY / 2.0f);
     matrix<4,4,T> result = identity();
     result(0,0) = ct / aspect;
@@ -249,7 +257,7 @@ struct matrix {
     return result;
   }
   
-  static inline auto make_lookat(stVector3D eye, stVector3D center, stVector3D up) {
+  static auto make_lookat(stVector3D eye, stVector3D center, stVector3D up) {
     stVector3D n = (eye - center).normalize();
     stVector3D u = up.cross(n).normalize();
     stVector3D v = n.cross(u);
@@ -308,9 +316,7 @@ struct matrix {
     float const det = (s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0);
     float const invdet = 1.0f / det;
     
-    /* If the determinant is zero,
-      * the matrix is singular and cannot be inverted. */
-    assert(det != 0.0f);
+    if (det == 0.0f) throw "non-invertible matrix";
     
     result(0,0) = ( (*this)(1,1) * c5 - (*this)(1,2) * c4 + (*this)(1,3) * c3) * invdet;
     result(0,1) = (-(*this)(0,1) * c5 + (*this)(0,2) * c4 - (*this)(0,3) * c3) * invdet;
@@ -337,7 +343,7 @@ struct matrix {
   }
   
   inline auto scale(bool ref = false) {
-    if (ref) return vector<3,float32*>(&(*this)(0,0), &(*this)(1,1), &(*this)(2,2));
+    if (ref) return vector<3, float32*>(&(*this)(0,0), &(*this)(1,1), &(*this)(2,2));
     return stVector3D((*this)(0,0), (*this)(1,1), (*this)(2,2));
   }
   
@@ -349,7 +355,11 @@ using stMatrix4D = matrix<4, 4, float32>;
   
 #pragma mark - Containers
 
-enum class LinkedListType { Single, Double };
+enum class LinkedListType {
+  Single,
+  Double,
+};
+
 /// A linked list
 template<typename T = uint32, enum LinkedListType K = LinkedListType::Single>
 struct LinkedList {
@@ -411,8 +421,8 @@ struct stTransform {
   /// Scale parameter
   stVector4D scale;
   
-  /// Get translation vector
-  stVector3D& translation() {
+  /// Translation vector
+  auto translation() -> stVector3D& {
     return matrix.translation();
   }
   
@@ -516,8 +526,7 @@ struct stAlways {
 #define objectTypeInstance  2
 
 /// Function to resolve object type names
-/// TODO: Make this part of the library
-using ObjectNameResolver = std::function<std::string(int16_t, int*)>;
+using ObjectNameResolver = std::function<std::string(int, int)>;
   
 /// Object identifier
 struct stObjectTypeElement {
@@ -1343,18 +1352,6 @@ struct stOctree {
   stVector3D max;
 };
 
-#define collideObjectTypeIndexedTriangles   1
-#define collideObjectTypeFacemap            2
-#define collideObjectTypeSprite             3
-#define collideObjectTypeTMesh              4
-#define collideObjectTypePoints             5
-#define collideObjectTypeLines              6
-#define collideObjectTypeIndexedSpheres     7
-#define collideObjectTypeAABB               8
-#define collideObjectTypeCones              9
-#define collideObjectTypeDeformationSetInfo 13
-#define collideObjectTypeInvalid            0xFFFF
-
 struct stCollideObject {
   /// Number of vertices
   int16 numVertices;
@@ -1693,7 +1690,6 @@ struct stInstantiatedPhysicalObject {
 #define superobjectTypeMirror               (1 << 9)
 
 struct stSuperObject {
-  
   uint32 type;
   
   union {
@@ -1731,32 +1727,32 @@ struct stSuperObject {
   padding(1)
   
   auto serialize(serializer& s) {
-//    s.integer(type);
-//    s.pointer(data);
-//    s.pointer(firstChild);
-//    s.pointer(lastChild);
-//    s.integer(numChildren);
-//    s.pointer(next);
-//    s.pointer(prev);
-//    s.pointer(parent);
-//    s.pointer(localTransform);
-//    s.pointer(globalTransform);
-//    s.integer(prevFrameProcessed);
-//    s.integer(drawFlags);
-//    s.integer(flags);
-//    s.pointer(visualBBox);
-//    s.pointer(collideBBox);
-//    s.structure(semiLookAt);
-//    s.real(transparency);
-//    s.integer(outlineColor);
-//    s.integer(displayPriority);
-//    s.integer(ilstatus);
-//    s.structure(ambientColor);
-//    s.structure(parallelDirection);
-//    s.structure(parallelColor);
-//    s.integer(superimpose);
-//    s.integer(isSuperObject);
-//    s.integer(transition);
+    s.integer(type);
+    s.pointer(data);
+    s.pointer(firstChild);
+    s.pointer(lastChild);
+    s.integer(numChildren);
+    s.pointer(next);
+    s.pointer(prev);
+    s.pointer(parent);
+    s.pointer(localTransform);
+    s.pointer(globalTransform);
+    s.integer(prevFrameProcessed);
+    s.integer(drawFlags);
+    s.integer(flags);
+    s.pointer(visualBBox);
+    s.pointer(collideBBox);
+    s.structure(semiLookAt);
+    s.real(transparency);
+    s.integer(outlineColor);
+    s.integer(displayPriority);
+    s.integer(ilstatus);
+    s.structure(ambientColor);
+    s.structure(parallelDirection);
+    s.structure(parallelColor);
+    s.integer(superimpose);
+    s.integer(isSuperObject);
+    s.integer(transition);
   }
   
   struct iterator {
@@ -2026,5 +2022,22 @@ struct stMSWay {
 #undef concat_inner
 #undef unique_name
 #undef concat
+
+};
+
+namespace cpa::global {
+
+extern pointer<structure::stAlways> g_stAlways;
+extern pointer<structure::stEngineStructure> g_stEngineStructure;
+extern pointer<structure::stObjectType> g_stObjectTypes;
+extern pointer<structure::stInputStructure> g_stInputStructure;
+extern pointer<structure::stRandom> g_stRandomStructure;
+
+extern pointer<structure::stSuperObject> p_stActualWorld;
+extern pointer<structure::stSuperObject> p_stDynamicWorld;
+extern pointer<structure::stSuperObject> p_stInactiveDynamicWorld;
+extern pointer<structure::stSuperObject> p_stFatherSector;
+
+extern pointer<uint8> g_bGhostMode;
 
 };
