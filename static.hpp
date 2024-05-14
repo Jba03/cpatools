@@ -10,6 +10,8 @@ bool readonly = true;
 
 namespace cpa::global {
   
+using namespace structure;
+
 pointer<stAlways> g_stAlways = nullptr;
 pointer<stEngineStructure> g_stEngineStructure = nullptr;
 pointer<stObjectType> g_stObjectTypes = nullptr;
