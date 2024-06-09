@@ -17,12 +17,8 @@ auto structure::stEngineStructure::loadLevel(std::string levelName) -> void {
 
 auto structure::stEngineObject::name(int16_t type) -> std::string {
   std::string name;
-  ///extern ObjectNameResolver nameResolver;
-  for (int i : {stdGame->instanceType, stdGame->modelType, stdGame->familyType}) {
-    name = global::objectTypeNameLookup(type, i);
-    if (name != "Invalid name") break;
-  }
-  
+  for (int i : {stdGame->instanceType, stdGame->modelType, stdGame->familyType})
+    if ((name = global::objectTypeNameLookup(type, i)) != "Invalid name") break;
   return name;
 }
 /// Get the superobject associated with this actor
@@ -187,77 +183,9 @@ static inline auto sectorSearch(pointer<structure::stSuperObject> fatherSector, 
   }
 }
 
-static auto rayTriangleIntersect(structure::stVector3D &origin, structure::stVector3D &direction, structure::stVector3D& A, structure::stVector3D& B, structure::stVector3D& C, bool cullBackface, double &t) -> bool {
-  structure::stVector3D E1 = B - A;
-  structure::stVector3D E2 = C - A;
-  structure::stVector3D H = direction.cross(E2);
-  
-  const double det = E1.dot(H);
-  const double invdet = 1.0f / det;
-  
-  if (det < EPSILON && cullBackface) return false;
-  if (fabs(det) < EPSILON && !cullBackface) return false;
-  
-  structure::stVector3D S = origin - A;
-  const double u = S.dot(H) * invdet;
-  if (u < 0.0f || u > 1.0f) return false;
-  
-  structure::stVector3D Q = S.cross(E1);
-  const double v = direction.dot(Q) * invdet;
-  if (v < 0.0f || u + v > 1.0f) return false;
-  
-  t = invdet * E2.dot(Q);
-  return t > EPSILON;
-}
-
-template<bool UseOctreeOptimization = false>
-static auto segmentCollideObjectIntersect(pointer<structure::stCollideObject> collObj, structure::stMatrix4D T, structure::stVector3D start, structure::stVector3D end, structure::stVector3D& intersectionPoint) -> bool {
-  try {
-    if (!collObj) return false;
-    
-    structure::stVector3D origin = start;
-    structure::stVector3D direction = (end - start).normalize();
-    const double l = (end - start).length();
-    
-    for (int i = 0; i < collObj->numElements; i++) {
-      int16_t type = collObj->elementTypes[i];
-      if (type == collideElementTypeIndexedTriangles) {
-        pointer<structure::stCollideElementIndexedTriangles> element = ((structure::stCollideElementIndexedTriangles**)collObj->elements)[i];
-        structure::stVector3D* vertices = collObj->vertices;
-        uint16* indices = element->faceIndices;
-        
-        for (int16_t index = 0; index < element->numFaces; index++) {
-          uint16 idx0 = *(indices + index * 3 + 0);
-          uint16 idx1 = *(indices + index * 3 + 1);
-          uint16 idx2 = *(indices + index * 3 + 2);
-          
-          structure::stVector3D A = *(vertices + idx0);
-          structure::stVector3D B = *(vertices + idx1);
-          structure::stVector3D C = *(vertices + idx2);
-          
-          structure::stVector3D TA = (T*A).xyz();
-          structure::stVector3D TB = (T*B).xyz();
-          structure::stVector3D TC = (T*C).xyz();
-          
-          double t;
-          if (rayTriangleIntersect(origin, direction, TA, TB, TC, true, t)) {
-            if (t < l) { // constrain to segment
-              intersectionPoint = origin + direction * t;
-              return true;
-            }
-          }
-        }
-      }
-    }
-    return false;
-  } catch (...) {
-    return false;
-  }
-}
-
-/************************/
-/** ``FUNCTION END``   **/
-/************************/
+/**********************/
+/** ``FUNCTION END`` **/
+/**********************/
 
 #undef s
 

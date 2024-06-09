@@ -10,7 +10,13 @@ namespace cpa::memory {
 using host_address_type = void*;
 using target_address_type = uint32_t;
 
-static constexpr std::endian endianness = std::endian::big;
+#if CPA_ENDIANNESS == CPA_ENDIAN_BIG
+  static constexpr std::endian endianness = std::endian::big;
+#elif CPA_ENDIANNESS == CPA_ENDIAN_LITTLE
+  static constexpr std::endian endianness = std::endian::big;
+#else
+# error Unknown endianness
+#endif
 
 /// Engine base address
 extern memory::host_address_type baseAddress;
