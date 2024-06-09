@@ -136,6 +136,7 @@ auto structure::stSuperObject::position() -> stVector3D& {
 
 #pragma mark - Static functions
 
+/// Determine the sector of a world-space point
 static inline auto sectorSearch(pointer<structure::stSuperObject> fatherSector, structure::stVector3D point) -> pointer<structure::stSuperObject> {
   try {
     float dNear = INFINITY;
@@ -255,7 +256,7 @@ static auto segmentCollideObjectIntersect(pointer<structure::stCollideObject> co
 }
 
 /************************/
-/** ``FUNCTION END`` **/
+/** ``FUNCTION END``   **/
 /************************/
 
 #undef s

@@ -6,7 +6,6 @@
 
 // Do not remove this include
 #include <cpatools/configuration.hpp>
-
 #include <cpatools/serialize.hpp>
 
 namespace cpa::structure {
@@ -164,7 +163,14 @@ struct vector {
   auto operator>=(vector v) { bool result = true; for(auto i : range(N)) if (data[i] <  v[i]) result = false; return result; }
   auto operator<=(vector v) { bool result = true; for(auto i : range(N)) if (data[i] >  v[i]) result = false; return result; }
   auto operator==(vector v) { bool result = true; for(auto i : range(N)) if (data[i] != v[i]) result = false; return result; }
-  auto operator!=(vector v) { bool result = true; for(auto i : range(N)) if (data[i] == v[i]) result = false; return result; }
+  auto operator!=(vector v) { return !(*this == v); }
+  
+  auto serialize(serializer::node& s) {
+    s.type("stVector" + std::to_string(N) + "D");
+    for (auto i : range(N)) {
+      s.real(std::string(1, "xyzw"[i]), data[i]);
+    }
+  }
   
 private:
   std::array<T, N> data;
@@ -347,6 +353,12 @@ struct matrix {
     return stVector3D((*this)(0,0), (*this)(1,1), (*this)(2,2));
   }
   
+  auto serialize(serializer::node& s) {
+    s.type("stMatrix" + std::to_string(Rows) + "D");
+    for (auto i : range(Rows * Columns))
+      s.real("m" + std::to_string(i), m[i]);
+  }
+  
   std::array<T, Rows * Columns> m;
 };
 
@@ -446,7 +458,7 @@ struct stTransform {
     return matrix * v;
   }
   
-  auto operator * (stTransform other) -> stTransform {
+  auto operator*(stTransform other) -> stTransform {
     // TODO: Also transform the scale here?
     stTransform T(type, matrix * other.matrix, scale);
     return T;
@@ -496,8 +508,27 @@ struct stTransform {
         return "Invalid";
     }
   }
+  
+  auto serialize(serializer::node& s) {
+    s.integer("type", type);
+    s.structure("matrix", matrix);
+    s.structure("scale", scale);
+  }
 };
   
+#pragma mark - stParallelBox
+
+struct stParallelBox {
+  stVector3D min;
+  stVector3D max;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stParallelBox");
+    s.structure("min", min);
+    s.structure("max", max);
+  }
+};
+
 #pragma mark - stAlways
   
 struct stAlwaysModelList {
@@ -558,6 +589,17 @@ struct stObjectType {
   
 #pragma mark - Engine
   
+/// High-resolution counter
+struct stTimerCount {
+  uint32 low, high;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stTimerCount");
+    s.integer("low", low);
+    s.integer("high", high);
+  }
+};
+
 /// Global engine timer
 struct stEngineTimer {
   /// Current frame of the level
@@ -569,16 +611,33 @@ struct stEngineTimer {
   /// Current counter
   uint32 currentCount;
   uint32 deltaCount;
+  /// Miscellaneous counters
   uint32 counter[16];
   uint32 usefulDeltaTime;
   uint32 pauseTime;
+  /// Optimal length of one frame, in seconds
   float32 frameLength;
-  uint32 totalRealTimeLow;
-  uint32 totalRealTimeHigh;
-  uint32 totalPauseTimeLow;
-  uint32 totalPauseTimeHigh;
+  /// Total time the game was played
+  stTimerCount totalRealTime;
+  /// Total time the game was paused
+  stTimerCount totalPauseTime;
+  /// Number of ticks per millisecond
   uint32 ticksPerMs;
-  void serialize(serializer& s);
+  
+  auto serialize(serializer::node& s) {
+    s.type("stEngineTimer");
+    s.integer("currentFrame", currentFrame);
+    s.integer("timerHandle", timerHandle);
+    s.integer("currentCount", currentCount);
+    s.integer("deltaCount", deltaCount);
+    //s.array("counter", counter);
+    s.integer("usefulDeltaTime", usefulDeltaTime);
+    s.integer("pauseTime", pauseTime);
+    s.real("frameLength", frameLength);
+    s.structure("totalRealTime", totalRealTime);
+    s.structure("totalPauseTime", totalPauseTime);
+    s.integer("ticksPerMs", ticksPerMs);
+  }
 };
 
 /* engine mode */
@@ -682,7 +741,7 @@ struct stEngineStructure {
   /// Load level by name
   inline auto loadLevel(std::string levelName) -> void;
   
-  void serialize(serializer& s);
+  auto serialize(serializer& s);
 };
   
 #pragma mark - IPT
@@ -698,6 +757,17 @@ struct stPadReadingOutput {
   float32 rotationAngle;
   /// Strafe sector (0-7 clockwise)
   int32 strafeSector;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stPadReadingOutput");
+    s.structure("globalVector", globalVector);
+    s.integer("horizontalAxis", horizontalAxis);
+    s.integer("verticalAxis", verticalAxis);
+    s.real("analogForce", analogForce);
+    s.real("trueAnalogForce", trueAnalogForce);
+    s.real("rotationAngle", rotationAngle);
+    s.integer("strafeSector", strafeSector);
+  }
 };
 
 struct stInputDevice {
@@ -727,7 +797,7 @@ struct stInputDevice {
   pointer<stInputEntryElement> keyButton[16];
   stPadReadingOutput padReadOutput;
   
-  void serialize(serializer& s);
+  auto serialize(serializer& s);
 };
 
 struct stInputEntryElement {
@@ -741,7 +811,7 @@ struct stInputEntryElement {
   int8 active;
   padding(3)
   
-  void serialize(serializer& s);
+  auto serialize(serializer& s);
 };
 
 struct stInputStructure {
@@ -811,6 +881,16 @@ struct stRandom {
   float32 tableMaxInverse;
   /// Random number table
   pointer<uint32> table;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stRandom");
+    s.integer("tableSize", tableSize);
+    //s.array("tableIndices", tableIndices);
+    s.integer("lastIndex", lastIndex);
+    s.integer("tableMax", tableMax);
+    s.real("tableMaxInverse", tableMaxInverse);
+    s.array("table", table, tableSize);
+  }
 };
   
 #pragma mark - 3D
@@ -934,13 +1014,19 @@ struct stCineManager {
   /// Currently active cutscene camera
   pointer<stSuperObject> activeCamera;
 };
-  
+
 #pragma mark - DNM
-  
+
 /// Axis-angle
 struct stDynamicsRotation {
   float32 angle;
   stVector3D axis;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stDynamicsRotation");
+    s.real("angle", angle);
+    s.structure("axis", axis);
+  }
 };
 
 /// Dynamics base block
@@ -1000,6 +1086,31 @@ struct stDynamicsBaseBlock {
   /// Padding
   padding(8)
 #endif
+  
+  auto serialize(serializer::node& s) {
+    s.type("stDynamicsBaseBlock");
+    s.integer("objectType", objectType);
+    s.pointer("idcard", idcard);
+    s.integer("flags", flags);
+    s.integer("endFlags", endFlags);
+    s.real("gravity", gravity);
+    s.real("slopeLimit", slopeLimit);
+    s.real("slopeCosine", slopeCosine);
+    s.real("slide", slide);
+    s.real("rebound", rebound);
+    s.structure("imposeSpeed", imposeSpeed);
+    s.structure("proposeSpeed", proposeSpeed);
+    s.structure("previousSpeed", previousSpeed);
+    s.structure("scale", scale);
+    s.structure("animationProposeSpeed", animationProposeSpeed);
+    s.structure("safeTranslation", safeTranslation);
+    s.structure("addTranslation", addTranslation);
+    s.structure("previousTransform", previousTransform);
+    s.structure("currentTransform", currentTransform);
+    s.structure("imposedRotation", imposedRotation);
+    s.integer("numFrames", numFrames);
+    s.pointer("report", report);
+  }
 };
   
 /// Dynamics advanced block
@@ -1030,10 +1141,28 @@ struct stDynamicsAdvancedBlock {
   stVector3D groundNormal;
   /// Wall normal
   stVector3D wallNormal;
-  /// Number of calls to mechanics made without colliding with anything
+  /// Number of calls made to mechanics without colliding with anything
   int8 collideCount;
   /// Padding
   padding(3)
+  
+  auto serialize(serializer::node& s) {
+    s.type("stDynamicsAdvancedBlock");
+    s.structure("inertia", inertia);
+    s.real("streamPriority", streamPriority);
+    s.real("streamFactor", streamFactor);
+    s.structure("slideFactor", slideFactor);
+    s.real("previousSlide", previousSlide);
+    s.structure("maxSpeed", maxSpeed);
+    s.structure("streamSpeed", streamSpeed);
+    s.structure("addSpeed", addSpeed);
+    s.structure("limit", limit);
+    s.structure("collisionTranslation", collisionTranslation);
+    s.structure("inertiaTranslation", inertiaTranslation);
+    s.structure("groundNormal", groundNormal);
+    s.structure("wallNormal", wallNormal);
+    s.integer("collideCount", collideCount);
+  }
 };
 
 /// AI and DNM message-interchange - "Module Allowing the Communication of Datas from the Player or the Intelligence to the Dynamics"
@@ -1054,6 +1183,26 @@ struct stMACDPID {
   stVector3D data13;
   float32 data14;
   uint8 data15;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stMACDPID");
+    s.real("data0", data0);
+    s.structure("data1", data1);
+    s.structure("data2", data2);
+    s.structure("data3", data3);
+    s.real("data4", data4);
+    s.real("data5", data5);
+    s.real("data6", data6);
+    s.structure("data7", data7);
+    s.structure("data8", data8);
+    s.integer("data9", data9);
+    s.integer("data10", data10);
+    s.structure("data11", data11);
+    s.real("data12", data12);
+    s.structure("data13", data13);
+    s.real("data14", data14);
+    s.integer("data15", data15);
+  }
 };
 
 /// Dynamics complex block
@@ -1070,6 +1219,21 @@ struct stDynamicsComplexBlock {
   pointer<stSuperObject> platformSuperObject;
   stTransform previousMatrixAbsolute;
   stTransform previousMatrixPrevious;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stDynamicsComplexBlock");
+    s.real("tiltStrength", tiltStrength);
+    s.real("tiltInertia", tiltInertia);
+    s.real("tiltOrigin", tiltOrigin);
+    s.real("tiltAngle", tiltAngle);
+    s.real("hangingLimit", hangingLimit);
+    s.structure("contact", contact);
+    s.structure("fallTranslation", fallTranslation);
+    s.structure("macdpid", macdpid);
+    s.pointer("platformSuperObject", platformSuperObject);
+    s.structure("previousMatrixAbsolute", previousMatrixAbsolute);
+    s.structure("previousMatrixPrevious", previousMatrixPrevious);
+  }
 };
 
 /// Dynamics obstacle reported from mechanics
@@ -1086,6 +1250,16 @@ struct stDynamicsObstacle {
   pointer<stGameMaterial> collidedMaterial;
   /// Collided object
   pointer<stSuperObject> superObject;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stDynamicsObstacle");
+    s.real("rate", rate);
+    s.structure("normal", normal);
+    s.structure("contact", contact);
+    //s.pointer("myMaterial", myMaterial);
+    //s.pointer("collidedMaterial", collidedMaterial);
+    s.pointer("superObject", superObject);
+  }
 };
 
 // Dynamics obstacle type
@@ -1124,6 +1298,23 @@ struct stDynamicsObstacleMEC {
   stVector3D zonePosition;
   /// Zone radius of dynamic object
   float32 zoneRadius;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stDynamicsObstacleMEC");
+    s.real("rate", rate);
+    s.structure("normal", normal);
+    s.structure("contact", contact);
+    //s.pointer("myMaterial", myMaterial);
+    //s.pointer("collidedMaterial", collidedMaterial);
+    s.pointer("superObject", superObject);
+    s.integer("type", type);
+    s.integer("myEntity", myEntity);
+    s.integer("collidedEntity", collidedEntity);
+    s.structure("translation", translation);
+    s.structure("zoneMove", zoneMove);
+    s.structure("zonePosition", zonePosition);
+    s.real("zoneRadius", zoneRadius);
+  }
 };
 
 /// Movement
@@ -1132,6 +1323,12 @@ struct stDynamicsMovevement {
   stVector3D linear;
   /// Angular movement
   stDynamicsRotation angular;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stDynamicsMovement");
+    s.structure("linear", linear);
+    s.structure("angular", angular);
+  }
 };
 
 /// Dynamics collision report
@@ -1164,6 +1361,22 @@ struct stDynamicsReport {
   char8 bitField;
   /// Padding
   padding(3)
+  
+  auto serialize(serializer::node& s) {
+    s.type("stDynamicsReport");
+    s.integer("previousSurfaceState", previousSurfaceState);
+    s.integer("currentSurfaceState", currentSurfaceState);
+    s.structure("obstacle", obstacle);
+    s.structure("ground", ground);
+    s.structure("wall", wall);
+    s.structure("character", character);
+    s.structure("ceiling", ceiling);
+    s.structure("previousAbsoluteSpeed", previousAbsoluteSpeed);
+    s.structure("currentAbsoluteSpeed", currentAbsoluteSpeed);
+    s.structure("previousAbsolutePosition", previousAbsolutePosition);
+    s.structure("currentAbsolutePosition", currentAbsolutePosition);
+    s.integer("bitField", bitField);
+  }
 };
 
 struct stDynamicsReportMEC {
@@ -1181,6 +1394,17 @@ struct stDynamicsReportMEC {
   stDynamicsObstacleMEC water;
   /// Ceiling obstacle
   stDynamicsObstacleMEC ceiling;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stDynamicsReport");
+    s.integer("currentSurfaceState", currentSurfaceState);
+    s.structure("obstacle", obstacle);
+    s.structure("ground", ground);
+    s.structure("wall", wall);
+    s.structure("character", character);
+    s.structure("water", water);
+    s.structure("ceiling", ceiling);
+  }
 };
 
 /// Parameters for mechanics engine
@@ -1199,18 +1423,39 @@ struct stDynamics {
   auto endFlag(int flag) -> bool {
     return base.endFlags & flag;
   }
+  
+  auto serialize(serializer::node& s) {
+    s.type("stDynamics");
+    s.structure("base", base);
+    s.structure("advanced", advanced);
+    s.structure("complex", complex);
+  }
 };
 
 struct stDynamicsParsingData {
   stVector3D position;
   float32 outAlpha;
   stVector3D vector;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stDynamicsParsingData");
+    s.structure("position", position);
+    s.real("outAlpha", outAlpha);
+    s.structure("vector", vector);
+  }
 };
 
 struct stDynam {
   pointer<stDynamics> dynamics;
-  pointer<stDynamicsParsingData> parsingData;
+  pointer<stDynamicsParsingData> parsingDatas;
   uint32 usedMechanics;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stDynam");
+    s.pointer("dynamics", dynamics);
+    s.pointer("parsingDatas", parsingDatas);
+    s.integer("usedMechanics", usedMechanics);
+  }
 };
   
 #pragma mark - Engine object
@@ -1250,6 +1495,37 @@ struct stStandardGameInfo {
   uint8 optional;
   padding(2)
   /* :: custom values :: */
+  
+  auto serialize(serializer::node& s) {
+    s.type("stStandardGameInfo");
+    s.integer("familyType", familyType);
+    s.integer("modelType", modelType);
+    s.integer("instanceType", instanceType);
+    s.pointer("superObject", superObject);
+    s.integer("initialFlag", initialFlag);
+    s.integer("flag1", flag1);
+    s.integer("flag2", flag2);
+    s.integer("lastFrame", lastFrame);
+    s.integer("capabilities", capabilities);
+    s.integer("tractionFactor", tractionFactor);
+    s.integer("hitPoints", hitPoints);
+    s.integer("maxHitPoints", maxHitPoints);
+    s.integer("maxHitPointsMax", maxHitPointsMax);
+    s.integer("customBits", customBits);
+    s.integer("aiCustomBits", aiCustomBits);
+    s.integer("platformType", platformType);
+    s.integer("miscFlags", miscFlags);
+    s.integer("transparencyZoneMin", transparencyZoneMin);
+    s.integer("transparencyZoneMax", transparencyZoneMax);
+    s.integer("initialCustomBits", initialCustomBits);
+    s.integer("aiInitialCustomBits", aiInitialCustomBits);
+    s.integer("initialHitPoints", initialHitPoints);
+    s.integer("maxInitialHitPoints", maxInitialHitPoints);
+    s.integer("initialMiscFlags", initialMiscFlags);
+    s.integer("tooFarLimit", tooFarLimit);
+    s.integer("importance", importance);
+    s.integer("optional", optional);
+  }
 };
 
 /// Engine object - an actor in the dynamic world
@@ -1293,6 +1569,21 @@ struct stEngineObject {
   inline auto horizontalSpeed() -> float;
   /// Get the linear vertical speed of this actor
   inline auto verticalSpeed() -> float;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stEngineObject");
+//    s.pointer(data3D);
+    s.pointer("stdGame", stdGame);
+    s.pointer("dynam", dynam);
+    s.pointer("brain", brain);
+//    s.pointer(cineInfo);
+//    s.pointer(collSet);
+//    s.pointer(msWay);
+//    s.pointer(msLight);
+//    s.pointer(sectorInfo);
+//    s.pointer(micro);
+//    s.pointer(msSound);
+  }
 };
   
 #pragma mark - SECT
@@ -1320,8 +1611,22 @@ struct stSector {
   pointer<> skyMaterial;
   uint8 fog;
 #if CPA_PLATFORM == CPA_PLATFORM_GCN
-  string<0x104> name;
+  string<0x100> name;
 #endif
+  
+  auto serialize(serializer::node& s) {
+    s.type("stSector");
+    s.structure("min", min);
+    s.structure("max", max);
+    s.real("farPlane", farPlane);
+    s.integer("isVirtual", isVirtual);
+    s.integer("cameraType", cameraType);
+    s.integer("counter", counter);
+    s.integer("priority", priority);
+    s.pointer("skyMaterial", skyMaterial);
+    s.integer("fog", fog);
+    s.string("name", name);
+  }
 };
   
 #pragma mark - COL
@@ -1335,6 +1640,14 @@ struct stOctreeNode {
   doublepointer<stOctreeNode> children;
   /// Face indices: overlapping indices into element and element data. May be NULL.
   pointer<uint8> faceIndices;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stOctreeNode");
+    s.structure("min", min);
+    s.structure("max", max);
+    for (auto i : range(8)) s.pointer(std::to_string(i), children[i]);
+    // TODO: indices
+  }
 };
 
 struct stOctree {
@@ -1350,6 +1663,15 @@ struct stOctree {
   stVector3D min;
   /// Octree maximum point
   stVector3D max;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stOctreeNode");
+    s.pointer("rootNode", rootNode);
+    s.integer("numFaces", numFaces);
+    //s.array("elementBases", elementBases, ???);
+    s.structure("min", min);
+    s.structure("max", max);
+  }
 };
 
 struct stCollideObject {
@@ -1372,6 +1694,15 @@ struct stCollideObject {
   pointer<> boundingBoxes;
   float32 boundingSphereRadius;
   stVector4D boundingSpherePosition;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stCollideObject");
+    s.integer("numVertices", numVertices);
+    s.integer("numElements", numElements);
+    s.integer("numBoundingBoxes", numBoundingBoxes);
+    s.array("vertices", vertices, numVertices);
+    s.array("elementTypes", elementTypes, numElements);
+  }
 };
 
 struct stPhysicalCollideSet {
@@ -1379,6 +1710,14 @@ struct stPhysicalCollideSet {
   pointer<stCollideObject> zdd;
   pointer<stCollideObject> zde;
   pointer<stCollideObject> zdr;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stPhysicalCollideSet");
+    s.pointer("zdm", zdm);
+    s.pointer("zdd", zdd);
+    s.pointer("zde", zde);
+    s.pointer("zdr", zdr);
+  }
 };
 
 struct stColliderInfo {
@@ -1659,6 +1998,14 @@ struct stPhysicalObject {
   pointer<stPhysicalCollideSet> physicalCollideset;
   pointer<> visualBoundingVolume;
   pointer<> collideBoundingVolume;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stPhysicalObject");
+    s.pointer("visualSet", visualSet);
+    s.pointer("physicalCollideSet", physicalCollideset);
+    s.pointer("visualBoundingVolume", visualBoundingVolume);
+    s.pointer("collideBoundingVolume", collideBoundingVolume);
+  }
 };
   
 #pragma mark - IPO
@@ -1671,8 +2018,20 @@ struct stInstantiatedPhysicalObject {
   uint32 lastTransitionID;
   float32 lastRatioUsed;
 #if CPA_PLATFORM == CPA_PLATFORM_GCN
+  padding(4)
   string<0x32> name;
 #endif
+  
+  auto serialize(serializer::node& s) {
+    s.type("stInstantiatedPhysicalObject");
+    s.pointer("physicalObject", physicalObject);
+    s.pointer("currentRadiosity", currentRadiosity);
+    //s.pointer("radiosity", radiosity);
+    s.pointer("portalCamera", portalCamera);
+    s.integer("lastTransitionID", lastTransitionID);
+    s.real("lastRatioUsed", lastRatioUsed);
+    s.string("name", name);
+  }
 };
   
 #pragma mark - stSuperObject
@@ -1711,8 +2070,8 @@ struct stSuperObject {
   int32 prevFrameProcessed;
   int32 drawFlags;
   uint32 flags;
-  pointer<> visualBBox;
-  pointer<> collideBBox;
+  pointer<stParallelBox> visualBBox;
+  pointer<stParallelBox> collideBBox;
   stVector3D semiLookAt;
   float32 transparency;
   uint32 outlineColor;
@@ -1726,33 +2085,40 @@ struct stSuperObject {
   uint8 transition;
   padding(1)
   
-  auto serialize(serializer& s) {
-    s.integer(type);
-    s.pointer(data);
-    s.pointer(firstChild);
-    s.pointer(lastChild);
-    s.integer(numChildren);
-    s.pointer(next);
-    s.pointer(prev);
-    s.pointer(parent);
-    s.pointer(localTransform);
-    s.pointer(globalTransform);
-    s.integer(prevFrameProcessed);
-    s.integer(drawFlags);
-    s.integer(flags);
-    s.pointer(visualBBox);
-    s.pointer(collideBBox);
-    s.structure(semiLookAt);
-    s.real(transparency);
-    s.integer(outlineColor);
-    s.integer(displayPriority);
-    s.integer(ilstatus);
-    s.structure(ambientColor);
-    s.structure(parallelDirection);
-    s.structure(parallelColor);
-    s.integer(superimpose);
-    s.integer(isSuperObject);
-    s.integer(transition);
+  auto serialize(serializer::node& s) {
+    s.type("stSuperObject");
+    s.integer("type", type);
+    
+    switch (static_cast<int>(type)) {
+      case superobjectTypeActor: s.pointer("data", actor); break;
+      case superobjectTypeIPO: s.pointer("data", ipo); break;
+      case superobjectTypeSector: s.pointer("data", sector); break;
+    }
+    
+    s.pointer("firstChild", firstChild);
+//    s.pointer("lastChild", lastChild);
+    s.integer("numChildren", numChildren);
+    s.pointer("next", next);
+//    s.pointer("prev", prev);
+    //s.pointer("parent", parent);
+//    s.pointer("localTransform", localTransform);
+    s.pointer("globalTransform", globalTransform);
+    s.integer("prevFrameProcessed", prevFrameProcessed);
+    s.integer("drawFlags", drawFlags);
+    s.integer("flags", flags);
+//    s.pointer("visualBBox", visualBBox);
+//    s.pointer("collideBBox", collideBBox);
+    s.structure("semiLookAt", semiLookAt);
+    s.real("transparency", transparency);
+    s.integer("outlineColor", outlineColor);
+    s.integer("displayPriority", displayPriority);
+    s.integer("ilstatus", ilstatus);
+    s.structure("ambientColor", ambientColor);
+    s.structure("parallelDirection", parallelDirection);
+    s.structure("parallelColor", parallelColor);
+    s.integer("superimpose", superimpose);
+    s.integer("isSuperObject", isSuperObject);
+    s.integer("transition", transition);
   }
   
   struct iterator {
@@ -1810,6 +2176,14 @@ struct stBrain {
   uint8 warnMechanics;
   uint8 activeDuringTransition;
   padding(2)
+  
+  auto serialize(serializer::node& s) {
+    s.type("stBrain");
+    s.pointer("mind", mind);
+    //s.pointer("lastNoCollideMaterial", lastNoCollideMaterial);
+    s.integer("warnMechanics", warnMechanics);
+    s.integer("activeDuringTransition", activeDuringTransition);
+  }
 };
 
 struct stMind {
@@ -1817,8 +2191,19 @@ struct stMind {
   pointer<stIntelligence> intelligence;
   pointer<stIntelligence> reflex;
   pointer<stDsgMem> dsgMem;
+  pointer<> unknown;
   uint8 runIntelligence;
   padding(3)
+  
+  auto serialize(serializer::node& s) {
+    s.type("stMind");
+    s.pointer("aiModel", aiModel);
+    s.pointer("intelligence", intelligence);
+    s.pointer("reflex", reflex);
+    s.pointer("dsgMem", dsgMem);
+    s.pointer("unknown", unknown);
+    s.integer("runIntelligence", runIntelligence);
+  }
 };
 
 struct stAIModel {
@@ -1828,6 +2213,10 @@ struct stAIModel {
   pointer<stMacroList> macroList;
   uint8 secondPassFinished;
   padding(3)
+  
+  auto serialize(serializer::node& s) {
+    s.type("stAIModel");
+  }
 };
 
 struct stNodeInterpret {
@@ -1840,10 +2229,26 @@ struct stNodeInterpret {
   padding(1)
 #endif
   using ParamType = decltype(param);
+  
+  auto serialize(serializer::node& s) {
+    s.type("stNodeInterpret");
+    s.integer("param", param);
+    s.integer("type", type);
+    s.integer("depth", depth);
+  }
 };
 
 struct stTreeInterpret {
   pointer<stNodeInterpret> node;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stTreeInterpret");
+    for (auto i : range(10000)) {
+      stNodeInterpret& node2 = node[i];
+      s.structure("node#" + std::to_string(i), node2);
+      if (node2.type == scriptNodeTypeEndMacro) break;
+    }
+  }
 };
 
 union uGetSetParam {
@@ -1889,6 +2294,13 @@ struct stBehavior {
   pointer<stTreeInterpret> firstScript;
   uint8 numScripts;
   padding(3)
+  
+  auto serialize(serializer::node& s) {
+    s.type("stBehavior");
+    s.string("name", name);
+    s.pointer("scripts", scripts);
+    s.integer("numScripts", numScripts);
+  }
 };
 
 struct stMacro {
@@ -1918,6 +2330,16 @@ struct stIntelligence {
   pointer<stBehavior> previousBehavior;
   pointer<> actionTable;
   uint32 initializeBehavior;
+  
+  auto serialize(serializer::node& s) {
+    s.type("stIntelligence");
+    //s.pointer("scriptAI", scriptAI);
+    s.pointer("currentTree", currentTree);
+    s.pointer("currentBehavior", currentBehavior);
+    s.pointer("previousBehavior", previousBehavior);
+    s.pointer("actionTable", actionTable);
+    s.integer("initializeBehavior", initializeBehavior);
+  }
 };
 
 struct stDsgVarInfo {
@@ -1942,6 +2364,10 @@ struct stDsgMem {
   pointer<> currentBuffer;
   
   inline auto dsgVarInfo(int idx) -> pointer<stDsgVarInfo> { return (*dsgVars)->info + idx; }
+  
+  auto serialize(serializer::node& s) {
+    s.type("stDsgMem");
+  }
 };
   
 #pragma mark - GLI

@@ -5,9 +5,8 @@
 #include <cpatools/constants.hpp>
 #include <cpatools/serialize.hpp>
 #include <cpatools/structure.hpp>
+#include <cpatools/function.hpp>
 
 #ifdef CPATOOLS_IMPLEMENTATION
 # include <cpatools/static.hpp>
 #endif
-
-#include <cpatools/function.hpp>

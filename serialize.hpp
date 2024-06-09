@@ -8,216 +8,241 @@
 #include <sstream>
 #include <unordered_map>
 
-#pragma mark - Markup
-
-namespace cpa::markup {
-
-struct node {
-  node() = default;
-  node(const std::string& name) : _name(name) { /* ... */ }
-  node(const std::string& name, const std::string& value) : _name(name), _value(value) { /* ... */ }
-  
-  auto name() const -> std::string { return _name; }
-  auto value() const -> std::string { return _value; }
-  auto begin() { return _children.begin(); }
-  auto end() { return _children.end(); }
-  auto add_child(const node& nd) -> node& { return _children.emplace_back(nd); }
-  
-  auto operator [](std::string name) -> node& {
-    for (auto& node : _children) {
-      if (node.name() == name) return node;
-    }
-    throw "No such node '" + name + "' found";
-  }
-  
-  inline static auto serialize(node& nd, unsigned depth = 0) -> std::string {
-    if (nd.name().length() == 0) {
-      std::string text;
-      for (auto child : nd) {
-        text.append(serialize(child, depth));
-      }
-      return text;
-    }
-    
-    std::string pad;
-    for (int i = 0; i < depth * 2; i++)
-      pad.append(" ");
-    
-    std::vector<std::string> lines;
-    std::stringstream value(nd.value());
-    for (std::string line; std::getline(value, line, '\n');) {
-      lines.emplace_back(line);
-    }
-    
-    std::string result;
-    result.append(pad + nd.name());
-    if (lines.size() == 1) {
-      result.append(std::string(":") + " " + lines[0]);
-    }
-    result.append("\n");
-    if (lines.size() > 1) {
-      result.append("  ");
-      for (std::string line : lines) {
-        result.append(pad + std::string(":") + " " + line + "\n");
-      }
-    }
-    for (auto child : nd) {
-      result.append(serialize(child, depth + 1));
-    }
-    return result;
-  }
-  
-  inline auto unserialize(std::string text) -> void {
-    std::vector<std::string> lines;
-    std::string line;
-    std::stringstream s(text);
-    while (std::getline(s, line, '\n')) {
-      if (depth(line) != std::string::npos) {
-        if (!line.substr(depth(line), std::string::npos).starts_with("//")) {
-          lines.push_back(line);
-        }
-      }
-    }
-    
-    int i = 0;
-    while (i < lines.size()) {
-      node node;
-      node.parse(lines, i, " ");
-      _children.emplace_back(node);
-    }
-  }
-  
-  inline auto depth(std::string text) -> size_t {
-    return text.find_first_not_of(" \t\n\v\f\r");
-  }
-  
-  auto valid(char c) const -> bool {
-    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '.' || c == '-' || c == '_';
-  }
-  
-  void parse(const std::vector<std::string>& text, int& i, std::string_view spacing) {
-    const char *p = text[i++].c_str();
-    _depth = depth(p);
-    p += _depth;
-    
-    //name
-    int length = 0;
-    while (valid(p[length])) length++;
-    if (length == 0) throw "Invalid node name";
-    _name = std::string(p).substr(0, length);
-    p += length;
-    
-    //value
-    if (*p == ':') {
-      int length = 1;
-      while(p[length] && p[length] != '\n') length++;
-      _value = std::string(p).substr(1, length - 1) + "\n";
-      _value = _value.substr(spacing.length(), std::string::npos);
-      p += length;
-    }
-    
-    while (i < text.size()) {
-      size_t subdepth = depth(text[i]);
-      if (subdepth <= _depth) break;
-      node node;
-      node.parse(text, i, spacing);
-      _children.push_back(node);
-    }
-  }
-  
-  auto children() {
-    return _children;
-  }
-  
-protected:
-  size_t _depth;
-  std::string _name;
-  std::string _value;
-  std::vector<node> _children;
-};
-  
-}
-
-#pragma mark - Serializer interface
+#include <cpatools/json.hpp>
 
 namespace cpa {
 
+struct serializable;
+
 /// Serializer & datatype representation converter
 struct serializer {
-  serializer() = default;
-  enum Mode { Convert, Serialize } mode;
+  enum Mode { Load, Save } mode = Save;
+  serializer(Mode m) : mode(m) {}
   
-  /// Structure cross-platform block representation
-  struct block {
-    enum type {
-      Integer,
-      Real,
-      Pointer,
-    };
-    
-    template<typename T>
-    void pointer(pointer<T>& v) {
-      void* data = v;
-      
-    }
-    
-    union {
-      uint64_t integer;
-      float real;
-      void* pointer;
-    } data;
-    
-  private:
-    std::vector<block> blocks;
-  };
-  
-//  operator node&() {
-//    return _root;
-//  }
+  using pointer_map = std::unordered_map<memory::target_address_type, std::any>;
   
   struct node {
-    enum type {
-      Integer,
-      Real,
-      Pointer,
-    };
+    node() = default;
+    node(serializer* s) {
+      serializer = s;
+    }
     
-    uint8_t* data = nullptr;
-    size_t size;
+    void type(std::string name) {
+      data["$datatype"] = name;
+    }
+    
+    template<typename T>
+    void integer(std::string name, T& v) {
+      //printf("add %s\n", name.c_str());
+      data[name] = uint32_t(v);
+    }
+    
+    template<typename T>
+    void real(std::string name, T& v) {
+      //printf("add %s\n", name.c_str());
+      data[name] = float(v);
+    }
+    
+    template<typename T> requires std::is_class_v<T>
+    void structure(std::string name, T& v) {
+      node child(serializer);
+      v.serialize(child);
+      data[name] = child.data;
+    }
+    
+    // Blank pointer
+    void pointer(std::string name, cpa::pointer<>& v) {
+      memory::target_address_type addr = v.pointeeAddress().effectiveAddress();
+      pointer_map& pointers = serializer->pointers;
+      if (pointers.find(addr) != pointers.end()) {
+//          node nd(serializer);
+//          _children.emplace_back(nd);
+      } else {
+        try {
+          node child(serializer);
+          data[name] = child.data;
+        } catch (...) {
+        }
+      
+      }
+    }
+    
+    // Pointer
+    template<typename T>
+    void pointer(std::string name, cpa::pointer<T>& v) {
+      memory::target_address_type addr = v.pointeeAddress().effectiveAddress();
+      pointer_map& pointers = serializer->pointers;
+      auto it = pointers.find(addr);
+      if (it != pointers.end()) {
+//          node nd(serializer);
+//          _children.emplace_back(nd);
+      } else {
+        // Avoid entering an endless loop
+        pointers[addr] = 0;
+        try {
+          node child(serializer);
+          data["$address"] = addr;
+          if (v) v->serialize(child);
+          data[name] = child.data;
+        } catch (...) {
+        }
+      
+      }
+    }
+    
+    template<size_t size>
+    void string(std::string name, cpa::string<size>& v) {
+      //printf("add string: %s\n", v);
+      node child(serializer);
+      child.type("string<" + std::to_string(size) + ">");
+      data[name] = (const char*)(v);
+    }
+    
+    template<typename T>
+    void array(std::string name, cpa::pointer<T>& v, int length) {
+      node child(serializer);
+//      for (auto i : range(length)) {
+//        T value = v[i];
+//        node child2(serializer);
+//        if constexpr (std::is_base_of_v<cpa::serializable, T>) {
+//          value.serialize(child2);
+//        } else {
+//          child2.data = (typename T::underlying_type)(v[i]);
+//        }
+//        child.data.push_back(child2.data);
+//      }
+      data[name] = child.data;
+    }
+    
+//    operator nlohmann::json& () const {
+//      return *this;
+//    }
+    
+    serializer* serializer;
+    nlohmann::ordered_json data;
   };
   
-  template<typename T>
-  void pointer(pointer<T>& v) {
-    void* data = v;
-    if (mode == Convert) {
-      // pointer expansion
-      //currentNode->
-    }
-  }
+//  struct node : markup::node {
+//    node(serializer* s) : _serializer(s) {}
+//
+//    node(serializer* s, std::string name, std::string value = "") {
+//      _name = name;
+//      _value = value;
+//      _serializer = s;
+//    }
+//
+//    template<typename T>
+//    void pointer(std::string name, pointer<T>& v) {
+//      if (_serializer->mode == Save) {
+//        memory::target_address_type addr = v.pointeeAddress().effectiveAddress();
+//        pointer_map& pointers = _serializer->pointers;
+//        if (pointers.find(addr) != pointers.end()) {
+//          node nd(_serializer, name, "@" + std::to_string(addr));
+//          _children.emplace_back(nd);
+//        } else {
+//          try {
+//            pointers[addr] = v;
+//            node nd(_serializer, name, std::to_string(addr));
+//            nd.add_child(node(_serializer, "absoluteAddress", std::to_string(addr)));
+//            v->serialize(nd);
+//            _children.emplace_back(nd);
+//          } catch (...) {
+//
+//          }
+//        }
+//      } else if (_serializer->mode == Load) {
+//        printf("loading pointer\n");
+//        //children().erase(children().begin());
+//      }
+//    }
+//
+//    template<typename T>
+//    void integer(std::string name, T& v) {
+//      if (_serializer->mode == Save) {
+//        data[name] = uint64_t(v);
+//      }
+//
+//      data[name] =
+//
+////      std::string typeName = "";
+////      if constexpr (std::is_same_v<T, char8>) typeName = "char8";
+////      if constexpr (std::is_same_v<T, uchar8>) typeName = "uchar8";
+////      if constexpr (std::is_same_v<T, int8>) typeName = "int8";
+////      if constexpr (std::is_same_v<T, uint8>) typeName = "uint8";
+////      if constexpr (std::is_same_v<T, int16>) typeName = "int16";
+////      if constexpr (std::is_same_v<T, uint16>) typeName = "uint16";
+////      if constexpr (std::is_same_v<T, int32>) typeName = "int32";
+////      if constexpr (std::is_same_v<T, uint32>) typeName = "uint32";
+////      if constexpr (std::is_same_v<T, int64>) typeName = "int64";
+////      if constexpr (std::is_same_v<T, uint64>) typeName = "uint64";
+////      if constexpr (std::is_same_v<T, float32>) typeName = "float32"; //preferably avoided
+////
+////      json data;
+////      data["type"] = ""
+//
+////      if (_serializer->mode == Save) {
+////        node nd(_serializer, name, typeName + "(" + std::to_string(v) + ")");
+////        add_child(nd);
+////      } else if (_serializer->mode == Load) {
+////        //children().erase(children().begin());
+////
+////        printf("loading integer: %s %s\n", getName().c_str(), getValue().c_str());
+////        printf("loading integer: %s %s\n", children().front().children().front().getName().c_str(), children().front().children().front().getValue().c_str());
+////        if (getValue().starts_with(typeName)) {
+////          std::string after = getValue().substr(typeName.length());
+////          after.pop_back();
+////
+////          printf("got integer: %s\n", after.c_str());
+////        }
+////
+////        //children().front();
+////
+////      }
+//    }
+//
+//    template<typename T>
+//    void real(std::string name, T& v) {
+////      if (_serializer->mode == Save) {
+////        char buf[64];
+////        std::sprintf(buf, "%gf", float(v));
+////        node nd(_serializer, name, std::string(buf));
+////        add_child(nd);
+////      } else if (_serializer->mode == Load) {
+////        printf("loading real: %s\n", getValue().c_str());
+////        //children().erase(children().begin());
+////      }
+//    }
+//
+//    template<typename T>
+//    void structure(std::string name, T& v) {
+////      if (_serializer->mode == Save) {
+////        node nd(_serializer, name);
+////        v.serialize(nd);
+////        add_child(nd);
+////      } else if (_serializer->mode == Load) {
+////        //children().erase(children().begin());
+////      }
+//    }
+//
+//    void type(std::string type) {
+////      if (_serializer->mode == Save) {
+////        _value = type;
+////      } else if (_serializer->mode == Load) {
+////        if (_value != type) fprintf(stderr, "serialization: structure types %s and %s do not match\n", _value.c_str(), type.c_str());
+////      }
+//    }
+//
+//    json data;
+//
+//    std::vector<node> _children;
+//    serializer* _serializer;
+//  };
   
-  template<typename T>
-  void integer(T& v) {
-    uint64_t i = uint64_t(v);
-    //node nd(_serializer, std::to_string(i));
-  }
-  
-  template<typename T>
-  void real(T& v) {
-    
-  }
-  
-  template<typename T>
-  void structure(T& v) {
-    //_children.emplace_back(nd);
-  }
-  
-  //_children.emplace_back(nd);
-  std::unordered_map<memory::target_address_type, block*> pointers;
-  
-private:
-  node* currentNode;
-  
-  //node _root { this, "root" };
+  pointer_map pointers;
+};
+
+struct serializable {
+  auto serialize(serializer::node&);
 };
 
 }

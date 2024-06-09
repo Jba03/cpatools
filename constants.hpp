@@ -175,7 +175,6 @@
 #define dynamicsObstacleTypeMobile         0x00010000
 #define dynamicsObstacleTypeError          0x80000000
 
-
 #pragma mark - Pointers -
 
 #define GCN_POINTER_ENGINE_STRUCTURE        0x803E7C0C

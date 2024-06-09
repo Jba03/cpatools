@@ -51,7 +51,7 @@ struct address {
   
   inline operator bool() {
     return valid();
-  };
+  }
   
   inline auto operator==(address other) -> bool {
     return effectiveAddress() == other.effectiveAddress();
@@ -115,9 +115,9 @@ struct type {
   inline auto operator--() -> type& { *this -= 1; return *this; }
   inline auto operator-() -> T1 { type v = *this; return -T1(v); }
   
-  inline auto operator|=(T1 other) { return *this = T1(data) | other; }
-  inline auto operator&=(T1 other) { return *this = T1(data) & other; }
-  inline auto operator^=(T1 other) { return *this = T1(data) ^ other; }
+  inline auto operator|=(T1 other) { *this = *this | other; return *this; }
+  inline auto operator&=(T1 other) { *this = *this & other; return *this; }
+  inline auto operator^=(T1 other) { *this = *this ^ other; return *this; }
   
   using underlying_type = T1;
 private:

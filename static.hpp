@@ -37,14 +37,11 @@ static bool isValidState() {
 }
 
 static void load() {
-  
-  // Global
   g_stEngineStructure = pointer<stSuperObject>    (GCN_POINTER_ENGINE_STRUCTURE);
   g_stInputStructure  = pointer<stInputStructure> (GCN_POINTER_INPUT_STRUCTURE);
   g_stRandomStructure = pointer<stRandom>         (GCN_POINTER_RND);
   g_bGhostMode        = pointer<uint8>            (GCN_POINTER_GHOST_MODE);
   
-  // World
   p_stActualWorld          = *doublepointer<stSuperObject>(GCN_POINTER_ACTUAL_WORLD);
   p_stDynamicWorld         = *doublepointer<stSuperObject>(GCN_POINTER_DYNAMIC_WORLD);
   p_stInactiveDynamicWorld = *doublepointer<stSuperObject>(GCN_POINTER_INACTIVE_DYNAMIC_WORLD);
