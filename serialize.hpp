@@ -8,7 +8,7 @@
 #include <sstream>
 #include <unordered_map>
 
-#include <cpatools/json.hpp>
+#include <cpatools/json/single_include/nlohmann/json.hpp>
 
 namespace cpa {
 
