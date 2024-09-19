@@ -697,6 +697,11 @@ struct vector {
   auto operator==(vector v) { bool result = true; for(auto i : range(N)) if (data[i] != v[i]) result = false; return result; }
   auto operator!=(vector v) { return !(*this == v); }
   
+  auto operator +=(vector v) { for(auto i : range(N)) data[i] = data[i] + v[i]; }
+  auto operator -=(vector v) { for(auto i : range(N)) data[i] = data[i] - v[i]; }
+  auto operator *=(vector v) { for(auto i : range(N)) data[i] = data[i] * v[i]; }
+  auto operator /=(vector v) { for(auto i : range(N)) data[i] = data[i] / v[i]; }
+  
 private:
   std::array<T, N> data;
 };
