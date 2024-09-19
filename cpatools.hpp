@@ -329,6 +329,8 @@ struct pointer {
   inline auto offset() -> address { return &ptr; }
   /// Address of the pointee
   inline auto pointeeAddress() -> address { return ptr; }
+  /// Dereferenced object
+  inline auto dereference() -> T& { return **this; }
   
   inline auto operator+(auto offset) -> pointer { return (uint8_t*)pointee() + sizeof(T) * offset; }
   inline auto operator-(auto offset) -> pointer { return (uint8_t*)pointee() - sizeof(T) * offset; }
