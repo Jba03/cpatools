@@ -60,15 +60,14 @@
 
 #define PLATFORM_IDENTIFIER_MASK  0x00FF
 #define PLATFORM_ENDIANNESS_MASK  0x0040
-#define GAME_IDENTIFIER_MASK      0xFF00
 #define ENGINE_VERSION_MASK       0xC000
 
 #define R2          ENGINE_VERSION_R2
 #define R3          ENGINE_VERSION_R3
 #define platform    ((CPA_VERSION & PLATFORM_IDENTIFIER_MASK) >> 0)
 #define endianness  ((CPA_VERSION & PLATFORM_ENDIANNESS_MASK) >> 6)
-#define game        ((CPA_VERSION & GAME_IDENTIFIER_MASK) >> 8)
 #define engine      ((CPA_VERSION & ENGINE_VERSION_MASK) >> 14)
+#define game        CPA_VERSION
 
 #define CPA_EXTERN extern
 
@@ -569,7 +568,6 @@ struct stZdxList;
 struct stCsaList;
 struct stZoneSetList;
 struct stCollideSet;
-struct stElementIndexedTrianglesVisual;
 struct stCollideElementIndexedTriangles;
 struct stCollideElementIndexedSphere;
 struct stCollideElementIndexedSpheres;
@@ -578,20 +576,35 @@ struct stCollisionCase;
 struct stIndexedAlignedBox;
 struct stCollideElementAlignedBoxes;
 struct stGVForCollision;
+struct stBoundingSphere;
+}
+
+/// Geometry module
+namespace GEO {
+union uVisualObject;
+struct stGeometricObject;
+struct stVisualSet;
+struct stVisualElementIndexedTriangles;
 }
 
 /// Game material module
 namespace GMT {
+struct stCollideMaterial;
 struct stGameMaterial;
 }
+
+/// Geometry morphing module
+namespace MOR {
+struct stMorphObject;
+};
 
 /// Graphics module
 namespace GLI {
 struct stVertex2D;
 struct stCamera;
-// todo
 struct stTexture;
-struct stAnimatedTextureNode;
+struct stAnimatedTextureNode; // todo
+struct stMaterial;
 }
 
 // GLD
@@ -2119,31 +2132,9 @@ struct COL::stCollideSet {
   stColliderInfo colliderInfo;
 };
 
-struct COL::stElementIndexedTrianglesVisual {
-  pointer<GMT::stGameMaterial> visualMaterial;
-  int16 numFaces;
-  int16 numUVs;
-  int16 numUVStages;
-  padding(2)
-  pointer<uint16> faceIndices;
-  pointer<> faceUVIndices;
-  pointer<stVector3D> faceNormals;
-  pointer<> UVElements;
-  pointer<> edges;
-  pointer<> adjacentFaces;
-  pointer<> thisIndexList;
-  int16 numUsedIndices;
-  int16 boundingBoxIndex;
-  uint32 displayList;
-  pointer<> unknown;
-  uint8 portalVisibility;
-  padding(3)
-  uint32 vao[4];
-};
-
 struct COL::stCollideElementIndexedTriangles {
   /// Collide material
-  pointer<stCollideMaterial> material;
+  pointer<COL::stCollideMaterial> material;
   /// Indices into collide element vertex array
   pointer<uint16> faceIndices;
   /// List of normals
@@ -2153,7 +2144,7 @@ struct COL::stCollideElementIndexedTriangles {
   /// Index of AABB
   int16 aabbIndex;
   /// Visual set
-  pointer<stElementIndexedTrianglesVisual> visual;
+  pointer<GEO::stVisualElementIndexedTriangles> visual;
   /// Indices of triangle edges
   pointer<uint16> edgeIndices;
   /// Indices of edge normals
@@ -2307,14 +2298,124 @@ struct COL::stGVForCollision {
   stVector3D static8VBox[8];
 };
 
+struct COL::stBoundingSphere {
+  stVector4D center;
+  float32 radius;
+#if engine == R3 && platform == PS2
+  padding(12)
+#endif
+};
+
+#pragma mark - GEO
+
+#define GEO_VisualElementIndexedTriangles     1
+#define GEO_VisualElementFacemap              2
+#define GEO_VisualElementSprite               3
+#define GEO_VisualElementTMesh                4
+#define GEO_VisualElementPoints               5
+#define GEO_VisualElementLines                6
+#define GEO_VisualElementIndexedSpheres       7
+#define GEO_VisualElementAABB                 8
+#define GEO_VisualElementCones                9
+#define GEO_VisualElementAltimap              11
+#define GEO_VisualElementDeformationSetInfo   13
+
+union GEO::uVisualObject {
+  pointer<GEO::stGeometricObject> geometricObject;
+  pointer<MOR::stMorphObject> morphObject;
+};
+
+struct GEO::stGeometricObject {
+  pointer<stVector3D> vertices;
+  pointer<stVector3D> vertexNormals;
+#if engine == R3 && platform == GCN
+  pointer<> unknown;
+#endif
+  doublepointer<float32> vertexTransparency;
+  pointer<int16> elementTypes;
+  pointer<> elements;
+  pointer<> edges;
+  pointer<> parallelBoxes;
+  uint32 type;
+  uint16 numVertices;
+  uint16 numElements;
+  uint16 numEdges;
+  uint16 numParallelBoxes;
+  float32 boundingSphereRadius;
+#if engine == R3 && platform == PS2
+  padding(4)
+#endif
+  stVector4D boundingSphereCenter;
+  pointer<> edgesDI;
+  int16 numEdgesDI;
+  int16 numOctreeEdges;
+  int32 usedForDrawingShadow;
+  int32 usedForCreatingShadow;
+  pointer<> sdcData;
+  uint32 isStatic;
+  uint32 displayList;
+  uint8 vtForSinus;
+  padding(3)
+};
+
+struct GEO::stVisualSet {
+  float32 lastDistance;
+  int16 numLodDefinitions;
+  int16 type;
+  pointer<float32> thresholdTable;
+  pointer<uVisualObject> d_p_stLodDefinitions;
+  doublepointer<> hRLI;
+  int32 numRLI;
+};
+
+struct GEO::stVisualElementIndexedTriangles {
+  pointer<GLI::stMaterial> visualMaterial;
+  int16 numFaces;
+  int16 numUVs;
+  int16 numUVStages;
+  padding(2)
+  pointer<uint16> faceIndices;
+#if game == R3_GCN
+  padding(4)
+#endif
+  pointer<> faceUVIndices;
+  pointer<stVector3D> faceNormals;
+  pointer<> UVElements;
+  pointer<> edges;
+  pointer<> adjacentFaces;
+  pointer<> thisIndexList;
+  int16 numUsedIndices;
+  int16 boundingBoxIndex;
+  uint32 displayList;
+  pointer<> unknown;
+  uint8 portalVisibility;
+  padding(3)
+  uint32 vao[4];
+};
+
+#pragma mark - GMT
+
+struct GMT::stCollideMaterial {
+  int16 zoneType;
+  uint16 identifier;
+  stVector3D direction;
+  float32 coefficient;
+  uint16 aiType;
+  padding(2)
+};
+
+struct GMT::stGameMaterial {
+  int32 soundMaterial;
+  pointer<stCollideMaterial> collideMaterial;
+};
 
 #pragma mark - PO
 
 struct PO::stPhysicalObject {
-  pointer<> visualSet;
-  pointer<COL::stPhysicalCollideSet> physicalCollideset;
-  pointer<> visualBoundingVolume;
-  pointer<> collideBoundingVolume;
+  pointer<GEO::stVisualSet> visualSet;
+  pointer<COL::stPhysicalCollideSet> physicalCollideSet;
+  pointer<COL::stBoundingSphere> visualBoundingVolume;
+  pointer<COL::stBoundingSphere> collideBoundingVolume;
 };
 
 
@@ -2781,6 +2882,14 @@ struct GLI::stCamera {
   uint8 transparency;
   float32 transpDist;
   uint8 mirrored;
+};
+
+struct GLI::stTexture {
+  
+};
+
+struct GLI::stMaterial {
+  
 };
 
 #pragma mark - WP
