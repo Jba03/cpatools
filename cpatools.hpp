@@ -447,27 +447,18 @@ using string = memory::string<size>;
 
 #pragma mark - Structure -
 
-// namespace common {
+// namespace Common {
 struct stEngineStructure;
 struct stEngineTimer;
 struct stLanguageStructure;
 struct stAlways;
 struct stObjectType;
-
 struct stSuperObject;
 struct stEngineObject;
 struct stStandardGameInfo;
 struct st3DData;
 struct stCollideSet;
 // }
-
-/// Microstructure module
-namespace MS {
-struct stMicro;
-struct stMSWay;
-struct stMSLight;
-struct stMSSound;
-}
 
 /// Input module
 namespace IPT {
@@ -521,18 +512,15 @@ struct stScriptAI;
 struct stMacro;
 struct stMacroList;
 struct stBehavior;
-
 struct stNodeInterpret;
 struct stTreeInterpret;
-union uGetSetParam;
-
 struct stActionParam;
 struct stActionTableEntry;
 struct stActionTable;
-
 struct stDsgMem;
 struct stDsgVar;
 struct stDsgVarInfo;
+union uGetSetParam;
 }
 
 /// Dynamics module
@@ -559,7 +547,6 @@ struct stMechanicsReport;
 
 /// Collision module
 namespace COL {
-enum ElementType : int;
 struct stOctreeNode;
 struct stOctree;
 struct stCollideObject;
@@ -579,27 +566,28 @@ struct stIndexedAlignedBox;
 struct stCollideElementAlignedBoxes;
 struct stGVForCollision;
 struct stBoundingSphere;
+enum ElementType : int;
 }
 
 /// Geometry module
 namespace GEO {
-enum ElementType : int;
-union uVisualObject;
 struct stGeometricObject;
 struct stVisualSet;
 struct stVisualElementIndexedTriangles;
-}
-
-/// Game material module
-namespace GMT {
-struct stCollideMaterial;
-struct stGameMaterial;
+union uVisualObject;
+enum ElementType : int;
 }
 
 /// Geometry morphing module
 namespace MOR {
 struct stMorphObject;
 };
+
+/// Game material module
+namespace GMT {
+struct stCollideMaterial;
+struct stGameMaterial;
+}
 
 /// Graphics module
 namespace GLI {
@@ -610,14 +598,20 @@ struct stAnimatedTextureNode; // todo
 struct stMaterial;
 }
 
-// GLD
-
 /// Waypoint module
 namespace WP {
 struct stWayPoint;
 struct stGraph;
 struct stGraphNode;
 struct stGraphChainList;
+}
+
+/// Microstructure module
+namespace MS {
+struct stMicro;
+struct stMSWay;
+struct stMSLight;
+struct stMSSound;
 }
 
 /// Sound module
