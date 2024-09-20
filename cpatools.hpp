@@ -644,6 +644,7 @@ using Index3D = uint16;
 /** ``STRUCTURE BEGIN`` **/
 /*************************/
 
+#define CPA_STRUCT
 struct structure : memory::allocable {};
 
 #pragma mark - Common types -
@@ -952,7 +953,7 @@ template<typename T = uint32> using stLinkedList = stDoublyLinkedList<T>;
 #pragma mark - stTransform
 
 /// World transform
-struct stTransform {
+struct stTransform : structure {
   enum Type {
     Uninitialized = 0,
     Identity = 1,
@@ -1055,14 +1056,14 @@ struct stTransform {
 
 #pragma mark - stParallelBox
 
-struct stParallelBox {
+struct stParallelBox : structure {
   stVector3D min;
   stVector3D max;
 };
 
 #pragma mark - stAlways
 
-struct stAlwaysModelList {
+struct stAlwaysModelList : structure {
   pointer<stAlwaysModelList> next;
   pointer<stAlwaysModelList> prev;
   pointer<stLinkedList<stAlwaysModelList>> parentList;
@@ -1070,7 +1071,7 @@ struct stAlwaysModelList {
   pointer<stEngineObject> alwaysObject;
 };
 
-struct stAlways {
+struct stAlways : structure {
   uint32 numAlways;
   stDoublyLinkedList<stAlwaysModelList> alwaysModels;
   pointer<stSuperObject> alwaysSuperobject;
@@ -1091,7 +1092,7 @@ struct stAlways {
 using ObjectNameResolver = std::function<std::string(int, int)>;
 
 /// Object identifier
-struct stObjectTypeElement {
+struct stObjectTypeElement : structure {
   /// Next object type element
   pointer<stObjectTypeElement> next;
   /// Previous object type element
@@ -1109,7 +1110,7 @@ struct stObjectTypeElement {
 };
 
 /// Global object type table
-struct stObjectType {
+struct stObjectType : structure {
   /// Family object types
   stDoublyLinkedList<stObjectTypeElement> family;
   /// Model object types
@@ -1121,13 +1122,13 @@ struct stObjectType {
 #pragma mark - Engine
 
 /// High-resolution counter
-struct stTimerCount {
+struct stTimerCount : structure {
   uint32 low;
   uint32 high;
 };
 
 /// Global engine timer
-struct stEngineTimer {
+struct stEngineTimer : structure {
   /// Current frame of the level
   uint32 currentFrame;
   /// Internal timer ID handle
@@ -1168,7 +1169,7 @@ enum InputMode {
 };
 
 /// Engine structure
-struct stEngineStructure {
+struct stEngineStructure : structure {
   /// Engine mode
   uint8 mode;
   /// Current level name
@@ -1259,7 +1260,7 @@ struct stEngineStructure {
 #pragma mark - IPT -
 
 /// Structure for ReadAnalogJoystick function
-struct IPT::stPadReadingOutput {
+struct IPT::stPadReadingOutput : structure {
   /// The world vector the joystick value translates to
   stVector3D globalVector;
   int16 horizontalAxis;
@@ -1271,7 +1272,7 @@ struct IPT::stPadReadingOutput {
   int32 strafeSector;
 };
 
-struct IPT::stInputDevice {
+struct IPT::stInputDevice : structure {
   uint8 valid;
   padding(3)
   pointer<> handle;
@@ -1299,7 +1300,7 @@ struct IPT::stInputDevice {
   stPadReadingOutput padReadOutput;
 };
 
-struct IPT::stInputEntryElement {
+struct IPT::stInputEntryElement : structure {
   padding(6 * 4) /* ? */
   uint32 numKeywords;
   pointer<> keywordArray;
@@ -1311,7 +1312,7 @@ struct IPT::stInputEntryElement {
   padding(3)
 };
 
-struct IPT::stInputStructure {
+struct IPT::stInputStructure : structure {
   uint8 onePadActivate;
   padding(3)
   stInputDevice device[18];
@@ -1344,7 +1345,7 @@ struct IPT::stInputStructure {
 #define RND_TableCount 0x2710
 #define RND_DefaultIndex 0x0000
 
-struct RND::stRandom {
+struct RND::stRandom : structure {
   /// Size of the table
   uint32 tableSize;
   /// Indices into the table
@@ -1380,15 +1381,15 @@ struct RND::stRandom {
 
 #pragma mark - 3D
 
-struct stAnim3D {
+struct stAnim3D : structure {
   
 };
 
-struct stSubAnim {
+struct stSubAnim : structure {
   pointer<stAnim3D> subAnim;
 };
 
-struct stActiveSubAnim {
+struct stActiveSubAnim : structure {
   pointer<stActiveSubAnim> next;
   pointer<stActiveSubAnim> prev;
   stDoublyLinkedList<stActiveSubAnim> parent;
@@ -1408,7 +1409,7 @@ struct stActiveSubAnim {
 #pragma mark - CINE -
 
 /// Actor state in a cinematic
-struct CINE::stCineActor {
+struct CINE::stCineActor : structure {
   stSubAnim subAnim;
   pointer<stActiveSubAnim> activeSubAnim;
   string<255> animationName;
@@ -1467,7 +1468,7 @@ struct CINE::stCineActor {
 };
 
 /// A cinematic
-struct CINE::stCine {
+struct CINE::stCine : structure {
   /// Actors controlling the cinematic
   stDoublyLinkedList<stCineActor> actors;
   /// Next cinematic in this list
@@ -1487,7 +1488,7 @@ struct CINE::stCine {
 };
 
 /// Cinematics state manager
-struct CINE::stCineManager {
+struct CINE::stCineManager : structure {
   /// List of level cinematics
   stDoublyLinkedList<stCine> cineList;
   /// Padding
@@ -1581,13 +1582,13 @@ struct CINE::stCineManager {
 #define dynamicsObstacleTypeError          0x80000000
 
 /// Axis-angle
-struct DNM::stDynamicsRotation {
+struct DNM::stDynamicsRotation : structure {
   float32 angle;
   stVector3D axis;
 };
 
 /// Dynamics base block
-struct DNM::stDynamicsBaseBlock {
+struct DNM::stDynamicsBaseBlock : structure {
   /// Type of the object
   int32 objectType;
   /// Current mechanics ID card
@@ -1646,7 +1647,7 @@ struct DNM::stDynamicsBaseBlock {
 };
 
 /// Dynamics advanced block
-struct DNM::stDynamicsAdvancedBlock {
+struct DNM::stDynamicsAdvancedBlock : structure {
   /// Inertia (NOTE: originally component-separated)
   stVector3D inertia;
   /// Priority of stream
@@ -1681,7 +1682,7 @@ struct DNM::stDynamicsAdvancedBlock {
 
 /// AI and DNM message-interchange:
 /// "Module Allowing the Communication of Datas from the Player or the Intelligence to the Dynamics"
-struct DNM::stMACDPID {
+struct DNM::stMACDPID : structure {
   float32 data0;
   stVector3D data1;
   stVector3D data2;
@@ -1701,7 +1702,7 @@ struct DNM::stMACDPID {
 };
 
 /// Dynamics complex block
-struct DNM::stDynamicsComplexBlock {
+struct DNM::stDynamicsComplexBlock : structure {
   float32 tiltStrength;
   float32 tiltInertia;
   float32 tiltOrigin;
@@ -1717,7 +1718,7 @@ struct DNM::stDynamicsComplexBlock {
 };
 
 /// Dynamics obstacle reported from mechanics
-struct DNM::stDynamicsObstacle {
+struct DNM::stDynamicsObstacle : structure {
   /// Collision rate
   float32 rate;
   /// Contact normal
@@ -1733,7 +1734,7 @@ struct DNM::stDynamicsObstacle {
 };
 
 /// A linear and angular movement offset
-struct DNM::stDynamicsMovement {
+struct DNM::stDynamicsMovement : structure {
   /// The linear movement
   stVector3D linear;
   /// The angular movement
@@ -1741,7 +1742,7 @@ struct DNM::stDynamicsMovement {
 };
 
 /// Dynamics collision report
-struct DNM::stDynamicsReport {
+struct DNM::stDynamicsReport : structure {
   /// The previous surface state
   uint32 previousSurfaceState;
   /// The current surface state
@@ -1773,7 +1774,7 @@ struct DNM::stDynamicsReport {
 };
 
 /// Parameters for mechanics engine
-struct DNM::stDynamics {
+struct DNM::stDynamics : structure {
   stDynamicsBaseBlock base;
   stDynamicsAdvancedBlock advanced;
   stDynamicsComplexBlock complex;
@@ -1787,14 +1788,14 @@ struct DNM::stDynamics {
   }
 };
 
-struct DNM::stDynamicsParsingData {
+struct DNM::stDynamicsParsingData : structure {
   stVector3D position;
   float32 outAlpha;
   stVector3D vector;
 };
 
 /// Dynamics reference structure
-struct DNM::stDynam {
+struct DNM::stDynam : structure {
   pointer<stDynamics> dynamics;
   pointer<stDynamicsParsingData> parsingDatas;
   uint32 usedMechanics;
@@ -1812,7 +1813,7 @@ struct DNM::stDynam {
 
 /// Mechanics engine obstacle (used internally)
 /// Cast to stCollisionCase
-struct MEC::stMechanicsObstacle {
+struct MEC::stMechanicsObstacle : structure {
   /// Collision rate
   float32 rate;
   /// Contact normal
@@ -1841,7 +1842,7 @@ struct MEC::stMechanicsObstacle {
   float32 zoneRadius;
 };
 
-struct MEC::stMechanicsReport {
+struct MEC::stMechanicsReport : structure {
   /// The current surface state
   uint32_t currentSurfaceState;
   /// Generic obstacle
@@ -1860,7 +1861,7 @@ struct MEC::stMechanicsReport {
 
 #pragma mark - Engine object
 
-struct stStandardGameInfo {
+struct stStandardGameInfo : structure {
   /// Family object type index
   int32 familyType;
   /// Model object type index
@@ -1898,7 +1899,7 @@ struct stStandardGameInfo {
 };
 
 /// Engine object - an actor in the dynamic world
-struct stEngineObject {
+struct stEngineObject : structure {
   /// 3D-related parameters
   pointer<st3DData> data3D;
   /// Standard game info
@@ -1946,7 +1947,7 @@ struct stEngineObject {
 
 #pragma mark - SECT -
 
-struct SECT::stSector {
+struct SECT::stSector : structure {
   stDoublyLinkedList<> characterList;
   stDoublyLinkedList<> staticLightList;
   stDoublyLinkedList<> dynamicLightList;
@@ -2008,7 +2009,7 @@ enum COL::ElementType : int {
 #define COL_MaterialIdMask_NoCollision       (1 << 15)
 #define COL_MaterialIdMask_All               (65535)
 
-struct COL::stOctreeNode {
+struct COL::stOctreeNode : structure {
   /// Minimum point
   stVector3D min;
   /// Maximum point
@@ -2024,7 +2025,7 @@ struct COL::stOctreeNode {
   }
 };
 
-struct COL::stOctree {
+struct COL::stOctree : structure {
   /// Root node
   pointer<stOctreeNode> rootNode;
   /// Faces which this octree encompasses
@@ -2039,7 +2040,7 @@ struct COL::stOctree {
   stVector3D max;
 };
 
-struct COL::stCollideObject {
+struct COL::stCollideObject : structure {
   /// Number of vertices
   int16 numVertices;
   /// Number of elements
@@ -2064,14 +2065,14 @@ struct COL::stCollideObject {
   stVector4D boundingSpherePosition;
 };
 
-struct COL::stPhysicalCollideSet {
+struct COL::stPhysicalCollideSet : structure {
   pointer<stCollideObject> zdm;
   pointer<stCollideObject> zdd;
   pointer<stCollideObject> zde;
   pointer<stCollideObject> zdr;
 };
 
-struct COL::stColliderInfo {
+struct COL::stColliderInfo : structure {
   pointer<stSuperObject> colliderActors[2];
   stVector3D colliderVectors[2];
   float32 colliderReal[2];
@@ -2080,7 +2081,7 @@ struct COL::stColliderInfo {
   uint8 unused[2];
 };
 
-struct COL::stZdxListEntry {
+struct COL::stZdxListEntry : structure {
 #if platform == GCN
   pointer<stZdxListEntry> next;
   pointer<stZdxListEntry> prev;
@@ -2091,7 +2092,7 @@ struct COL::stZdxListEntry {
 #endif
 };
 
-struct COL::stZdxList {
+struct COL::stZdxList : structure {
 #if platform == GCN
   stDoublyLinkedList<stZdxListEntry> list;
 #else
@@ -2104,15 +2105,15 @@ struct COL::stZdxList {
   inline auto all() -> std::vector<pointer<stCollideObject>>;
 };
 
-struct COL::stCsaList {
+struct COL::stCsaList : structure {
   stDoublyLinkedList<> list;
 };
 
-struct COL::stZoneSetList {
+struct COL::stZoneSetList : structure {
   
 };
 
-struct COL::stCollideSet {
+struct COL::stCollideSet : structure {
   pointer<stZdxList> zddList;
   pointer<stZdxList> zdeList;
   pointer<stZdxList> zdmList;
@@ -2136,7 +2137,7 @@ struct COL::stCollideSet {
   stColliderInfo colliderInfo;
 };
 
-struct COL::stCollideElementIndexedTriangles {
+struct COL::stCollideElementIndexedTriangles : structure {
   /// Collide material
   pointer<COL::stCollideMaterial> material;
   /// Indices into collide element vertex array
@@ -2162,7 +2163,7 @@ struct COL::stCollideElementIndexedTriangles {
 };
 
 /// Indexed collide sphere
-struct COL::stCollideElementIndexedSphere {
+struct COL::stCollideElementIndexedSphere : structure {
   /// Sphere radius
   float32 radius;
   /// Collide material
@@ -2174,7 +2175,7 @@ struct COL::stCollideElementIndexedSphere {
 };
 
 /// A collide element of multiple indexed spheres
-struct COL::stCollideElementIndexedSpheres {
+struct COL::stCollideElementIndexedSpheres : structure {
   /// List of spheres
   pointer<stCollideElementIndexedSphere> spheres;
   /// Number of spheres
@@ -2183,7 +2184,7 @@ struct COL::stCollideElementIndexedSpheres {
   int16 aabbIndex;
 };
 
-struct COL::stCollideMaterial {
+struct COL::stCollideMaterial : structure {
   int16 zoneType;
   /// COL_MaterialIdMask_
   uint16 identifier;
@@ -2196,7 +2197,7 @@ struct COL::stCollideMaterial {
 };
 
 /// Collision case, cast internally to MEC::stMechanicsObstacle.
-struct COL::stCollisionCase {
+struct COL::stCollisionCase : structure {
   /// Time of collision (-1.0 to 1.0)
   float32 collisionTime;
   /// Normal of the collision
@@ -2223,13 +2224,13 @@ struct COL::stCollisionCase {
   float32 rebound2;
 };
 
-struct COL::stIndexedAlignedBox {
+struct COL::stIndexedAlignedBox : structure {
   int16 min;
   int16 max;
   pointer<GMT::stGameMaterial> material;
 };
 
-struct COL::stCollideElementAlignedBoxes {
+struct COL::stCollideElementAlignedBoxes : structure {
   pointer<stIndexedAlignedBox> boxes;
   int16 numBoxes;
   int16 parallelBoxIndex;
@@ -2237,7 +2238,7 @@ struct COL::stCollideElementAlignedBoxes {
 
 #define COL_MaxSelectedOctreeNodes  100
 
-struct COL::stGVForCollision {
+struct COL::stGVForCollision : structure {
   pointer<stVector3D> vertex1;
   stVector3D edgeVector;
   pointer<stVector3D> vertex2;
@@ -2302,7 +2303,7 @@ struct COL::stGVForCollision {
   stVector3D static8VBox[8];
 };
 
-struct COL::stBoundingSphere {
+struct COL::stBoundingSphere : structure {
   stVector4D center;
   float32 radius;
 #if engine == R3 && platform == PS2
@@ -2331,7 +2332,7 @@ union GEO::uVisualObject {
   pointer<MOR::stMorphObject> morphObject;
 };
 
-struct GEO::stGeometricObject {
+struct GEO::stGeometricObject : structure {
   pointer<stVector3D> vertices;
   pointer<stVector3D> vertexNormals;
 #if engine == R3 && platform == GCN
@@ -2364,7 +2365,7 @@ struct GEO::stGeometricObject {
   padding(3)
 };
 
-struct GEO::stVisualSet {
+struct GEO::stVisualSet : structure {
   float32 lastDistance;
   int16 numLodDefinitions;
   int16 type;
@@ -2374,7 +2375,7 @@ struct GEO::stVisualSet {
   int32 numRLI;
 };
 
-struct GEO::stVisualElementIndexedTriangles {
+struct GEO::stVisualElementIndexedTriangles : structure {
   pointer<GLI::stMaterial> visualMaterial;
   int16 numFaces;
   int16 numUVs;
@@ -2401,7 +2402,7 @@ struct GEO::stVisualElementIndexedTriangles {
 
 #pragma mark - GMT
 
-struct GMT::stCollideMaterial {
+struct GMT::stCollideMaterial : structure {
   int16 zoneType;
   uint16 identifier;
   stVector3D direction;
@@ -2410,14 +2411,14 @@ struct GMT::stCollideMaterial {
   padding(2)
 };
 
-struct GMT::stGameMaterial {
+struct GMT::stGameMaterial : structure {
   int32 soundMaterial;
   pointer<stCollideMaterial> collideMaterial;
 };
 
 #pragma mark - PO
 
-struct PO::stPhysicalObject {
+struct PO::stPhysicalObject : structure {
   pointer<GEO::stVisualSet> visualSet;
   pointer<COL::stPhysicalCollideSet> physicalCollideSet;
   pointer<COL::stBoundingSphere> visualBoundingVolume;
@@ -2427,7 +2428,7 @@ struct PO::stPhysicalObject {
 
 #pragma mark - IPO
 
-struct IPO::stInstantiatedPhysicalObject {
+struct IPO::stInstantiatedPhysicalObject : structure {
   pointer<PO::stPhysicalObject> physicalObject;
   pointer<> currentRadiosity;
   doublepointer<> radiosity;
@@ -2713,7 +2714,7 @@ private:
 #define AI_ScriptNodeTypeCineRef            43 /* ? */
 #define AI_ScriptNodeTypeGraphRef           44
 
-struct AI::stBrain {
+struct AI::stBrain : structure {
   pointer<stMind> mind;
   pointer<GMT::stGameMaterial> lastNoCollideMaterial;
   uint8 warnMechanics;
@@ -2721,7 +2722,7 @@ struct AI::stBrain {
   padding(2)
 };
 
-struct AI::stMind {
+struct AI::stMind : structure {
   pointer<stAIModel> aiModel;
   pointer<stIntelligence> intelligence;
   pointer<stIntelligence> reflex;
@@ -2731,7 +2732,7 @@ struct AI::stMind {
   padding(3)
 };
 
-struct AI::stAIModel {
+struct AI::stAIModel : structure {
   pointer<stScriptAI> intelligenceBehaviorList;
   pointer<stScriptAI> reflexBehaviorList;
   pointer<stDsgVar> dsgVar;
@@ -2740,7 +2741,7 @@ struct AI::stAIModel {
   padding(3)
 };
 
-struct AI::stNodeInterpret {
+struct AI::stNodeInterpret : structure {
 #if platform == GCN
   uint32 param;
   padding(3)
@@ -2752,7 +2753,7 @@ struct AI::stNodeInterpret {
   using ParamType = decltype(param);
 };
 
-struct AI::stTreeInterpret {
+struct AI::stTreeInterpret : structure {
   pointer<stNodeInterpret> node;
 };
 
@@ -2764,11 +2765,11 @@ union AI::uGetSetParam {
   pointer<> pointerValue;
 };
 
-struct AI::stActionParam {
+struct AI::stActionParam : structure {
   union uGetSetParam param[8];
 };
 
-struct AI::stActionTableEntry {
+struct AI::stActionTableEntry : structure {
 #if CPA_PLATFORM == CPA_PLATFORM_GCN
   string<0x50> name;
   uint32 param[8];
@@ -2785,7 +2786,7 @@ struct AI::stActionTableEntry {
   uint8 newReturn;
 };
 
-struct AI::stActionTable {
+struct AI::stActionTable : structure {
   pointer<stActionTableEntry> entries;
   uint8 numEntries;
   uint8 numEntriesUsed;
@@ -2793,7 +2794,7 @@ struct AI::stActionTable {
   padding(1)
 };
 
-struct AI::stBehavior {
+struct AI::stBehavior : structure {
   string<0x100> name; /* 256 on GCN, at least */
   pointer<stTreeInterpret> scripts;
   pointer<stTreeInterpret> firstScript;
@@ -2801,19 +2802,19 @@ struct AI::stBehavior {
   padding(3)
 };
 
-struct AI::stMacro {
+struct AI::stMacro : structure {
   string<0x100> name;
   pointer<stTreeInterpret> initialTree;
   pointer<stTreeInterpret> currentTree;
 };
 
-struct AI::stMacroList {
+struct AI::stMacroList : structure {
   pointer<stMacro> macros;
   uint8 numMacros;
   padding(3)
 };
 
-struct AI::stScriptAI {
+struct AI::stScriptAI : structure {
   pointer<stBehavior> behavior;
   uint32 numBehaviors;
   uint32 noInitialization;
@@ -2821,7 +2822,7 @@ struct AI::stScriptAI {
   padding(3)
 };
 
-struct AI::stIntelligence {
+struct AI::stIntelligence : structure {
   doublepointer<stScriptAI> scriptAI;
   pointer<stNodeInterpret> currentTree;
   pointer<stBehavior> currentBehavior;
@@ -2830,7 +2831,7 @@ struct AI::stIntelligence {
   uint32 initializeBehavior;
 };
 
-struct AI::stDsgVarInfo {
+struct AI::stDsgVarInfo : structure {
   uint32 memoryOffset;
   uint32 type;
   int16 saveType;
@@ -2838,7 +2839,7 @@ struct AI::stDsgVarInfo {
   uint32 objectTreeInitialType;
 };
 
-struct AI::stDsgVar {
+struct AI::stDsgVar : structure {
   pointer<> memory;
   pointer<stDsgVarInfo> info;
   uint32 memorySize;
@@ -2846,7 +2847,7 @@ struct AI::stDsgVar {
   padding(3)
 };
 
-struct AI::stDsgMem {
+struct AI::stDsgMem : structure {
   doublepointer<stDsgVar> dsgVars;
   pointer<> initialBuffer;
   pointer<> currentBuffer;
@@ -2856,13 +2857,13 @@ struct AI::stDsgMem {
 
 #pragma mark - GLI
 
-struct GLI::stVertex2D {
+struct GLI::stVertex2D : structure {
   float32 x;
   float32 y;
   float32 dz;
 };
 
-struct GLI::stCamera {
+struct GLI::stCamera : structure {
   int32 cameraMode;
   stTransform transform;
   /// Field of view
@@ -2890,23 +2891,23 @@ struct GLI::stCamera {
   uint8 mirrored;
 };
 
-struct GLI::stTexture {
+struct GLI::stTexture : structure {
   
 };
 
-struct GLI::stMaterial {
+struct GLI::stMaterial : structure {
   
 };
 
 #pragma mark - WP
 
-struct WP::stWayPoint {
+struct WP::stWayPoint : structure {
   stVector3D point;
   float32 radius;
   pointer<stSuperObject> superobject;
 };
 
-struct WP::stGraphNode {
+struct WP::stGraphNode : structure {
   pointer<stGraphNode> next;
   pointer<stGraphNode> prev;
   pointer<stGraph> graph;
@@ -2916,11 +2917,11 @@ struct WP::stGraphNode {
   pointer<> arcList;
 };
 
-struct WP::stGraph {
+struct WP::stGraph : structure {
   stDoublyLinkedList<stGraphNode> nodes;
 };
 
-struct WP::stGraphChainList {
+struct WP::stGraphChainList : structure {
   pointer<stGraph> graph;
   pointer<stGraphChainList> next;
 };
@@ -2928,7 +2929,7 @@ struct WP::stGraphChainList {
 
 #pragma mark - MS
 
-struct MS::stMSWay {
+struct MS::stMSWay : structure {
   pointer<WP::stGraph> graph;
   int32 index;
   uint8 spherical;
@@ -2948,20 +2949,20 @@ struct stLinkTableEntry;
 struct stTypeInfo;
 }
 
-struct SND::stLinkTableEntry {
+struct SND::stLinkTableEntry : structure {
   uint32 id;
   uint64 cuuid;
 };
 
 /// An element chosen randomly
-struct SND::stRandomElement {
+struct SND::stRandomElement : structure {
   /// Link to the resource
   SND::Ref resourceLink;
   /// The probability of this element being chosen
   float32 probability;
 };
 
-struct SND::stSwitchElement {
+struct SND::stSwitchElement : structure {
   /// Link to the resource
   SND::Ref resourceLink;
   /// Index of this element
@@ -2975,11 +2976,11 @@ struct SND::stSwitchElement {
 //  float32 probability;
 //};
 
-struct SND::stDeTune {
+struct SND::stDeTune : structure {
   float32 panning;
 };
 
-struct SND::stEventParametersExtraAll {
+struct SND::stEventParametersExtraAll : structure {
   CUUID link;
   float32 pitch;
   float32 volume;
@@ -3004,7 +3005,7 @@ union SND::stEventParameters {
 //  stEventParameters param;
 //};
 
-struct SND::stBlockEvent {
+struct SND::stBlockEvent : structure {
   /// Event identifier
   pointer<> unknown;
   ///
@@ -3019,12 +3020,12 @@ struct SND::stBlockEvent {
   //pointer<>
 };
 
-struct SND::stTypeInfo {
+struct SND::stTypeInfo : structure {
   /// Name of this type
   pointer<string<>> name;
 };
 
-struct SND::stBlockEntry {
+struct SND::stBlockEntry : structure {
   /// Pointer to entry type information
   doublepointer<stTypeInfo> typeInfo;
   /// The unique identifier of this entry
@@ -3040,7 +3041,6 @@ struct SND::stBlockEntry {
   ///
   pointer<> linkData;
 };
-
 
 /***********************/
 /** ``STRUCTURE END`` **/
