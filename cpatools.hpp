@@ -548,6 +548,7 @@ struct stDynamicsRotation;
 struct stDynamicsMovement;
 struct stDynamicsParsingData;
 struct stMACDPID;
+enum ObstacleType : unsigned;
 }
 
 /// Mechanics module
@@ -1509,78 +1510,80 @@ struct CINE::stCineManager : structure {
 #pragma mark - DNM -
 
 // Control flags
-#define dynamicsFlagAnimation                 (1 <<  0) // Use animation speed?
-#define dynamicsFlagCollide                   (1 <<  1) // Enable geometry collision?
-#define dynamicsFlagGravity                   (1 <<  2) // Enable gravity?
-#define dynamicsFlagTilt                      (1 <<  3) // Tilt
-#define dynamicsFlagGi                        (1 <<  4) // Hanging from ceiling
-#define dynamicsFlagOnGround                  (1 <<  5) // Is on ground
-#define dynamicsFlagClimb                     (1 <<  6) // Climbing
-#define dynamicsFlagCollisionControl          (1 <<  7) // Use dynamics param when colliding?
-#define dynamicsFlagKeepWallZSpeed            (1 <<  8) // Preseve Z-axis momentum when colliding with a wall?
-#define dynamicsFlagSpeedLimit                (1 <<  9) // Limit speed
-#define dynamicsFlagInertia                   (1 << 10) // Has inertia?
-#define dynamicsFlagStream                    (1 << 11) // Is affected by a stream?
-#define dynamicsFlagStuckToPlatform           (1 << 12) // No slide on platform
-#define dynamicsFlagIsScale                   (1 << 13) // Use scale parameters
-#define dynamicsFlagSpeedImposeAbsolute       (1 << 14) // Impose absolute speed
-#define dynamicsFlagSpeedProposeAbsolute      (1 << 15) // Propose absolute speed
-#define dynamicsFlagSpeedAddAbsolute          (1 << 16) // Add absolute speed
-#define dynamicsFlagSpeedImposeX              (1 << 17) // Impose absolute X-speed (after inertia & gravity)
-#define dynamicsFlagSpeedImposeY              (1 << 18) // Impose absolute Y-speed (after inertia & gravity)
-#define dynamicsFlagSpeedImposeZ              (1 << 19) // Impose absolute Z-speed (after inertia & gravity)
-#define dynamicsFlagSpeedProposeX             (1 << 20) // Propose absolute X-speed (before inertia & gravity)
-#define dynamicsFlagSpeedProposeY             (1 << 21) // Propose absolute Y-speed (before inertia & gravity)
-#define dynamicsFlagSpeedProposeZ             (1 << 22) // Propose absolute Z-speed (before inertia & gravity)
-#define dynamicsFlagSpeedAddX                 (1 << 23) // Add absolute X-speed
-#define dynamicsFlagSpeedAddY                 (1 << 24) // Add absolute Y-speed
-#define dynamicsFlagSpeedAddZ                 (1 << 25) // Add absolute Z-speed
-#define dynamicsFlagLimitX                    (1 << 26) //
-#define dynamicsFlagLimitY                    (1 << 27) //
-#define dynamicsFlagLimitZ                    (1 << 28) //
-#define dynamicsFlagImposeRotation            (1 << 29) // Impose axis rotation
-#define dynamicsFlagPlatformLock              (1 << 30) // Keep on platform
-#define dynamicsFlagImposeTranslation         (1 << 31) // Impose translation
+#define DNM_Flag_Animation              (1 <<  0) // Use animation speed?
+#define DNM_Flag_Collide                (1 <<  1) // Enable geometry collision?
+#define DNM_Flag_Gravity                (1 <<  2) // Enable gravity?
+#define DNM_Flag_Tilt                   (1 <<  3) // Tilt
+#define DNM_Flag_Gi                     (1 <<  4) // Hanging from ceiling
+#define DNM_Flag_OnGround               (1 <<  5) // Is on ground
+#define DNM_Flag_Climb                  (1 <<  6) // Climbing
+#define DNM_Flag_CollisionControl       (1 <<  7) // Use dynamics param when colliding?
+#define DNM_Flag_KeepWallZSpeed         (1 <<  8) // Preseve Z-axis momentum when colliding with a wall?
+#define DNM_Flag_SpeedLimit             (1 <<  9) // Limit speed
+#define DNM_Flag_Inertia                (1 << 10) // Has inertia?
+#define DNM_Flag_Stream                 (1 << 11) // Is affected by a stream?
+#define DNM_Flag_StuckToPlatform        (1 << 12) // No slide on platform
+#define DNM_Flag_IsScale                (1 << 13) // Use scale parameters
+#define DNM_Flag_SpeedImposeAbsolute    (1 << 14) // Impose absolute speed
+#define DNM_Flag_SpeedProposeAbsolute   (1 << 15) // Propose absolute speed
+#define DNM_Flag_SpeedAddAbsolute       (1 << 16) // Add absolute speed
+#define DNM_Flag_SpeedImposeX           (1 << 17) // Impose absolute X-speed (after inertia & gravity)
+#define DNM_Flag_SpeedImposeY           (1 << 18) // Impose absolute Y-speed (after inertia & gravity)
+#define DNM_Flag_SpeedImposeZ           (1 << 19) // Impose absolute Z-speed (after inertia & gravity)
+#define DNM_Flag_SpeedProposeX          (1 << 20) // Propose absolute X-speed (before inertia & gravity)
+#define DNM_Flag_SpeedProposeY          (1 << 21) // Propose absolute Y-speed (before inertia & gravity)
+#define DNM_Flag_SpeedProposeZ          (1 << 22) // Propose absolute Z-speed (before inertia & gravity)
+#define DNM_Flag_SpeedAddX              (1 << 23) // Add absolute X-speed
+#define DNM_Flag_SpeedAddY              (1 << 24) // Add absolute Y-speed
+#define DNM_Flag_SpeedAddZ              (1 << 25) // Add absolute Z-speed
+#define DNM_Flag_LimitX                 (1 << 26) //
+#define DNM_Flag_LimitY                 (1 << 27) //
+#define DNM_Flag_LimitZ                 (1 << 28) //
+#define DNM_Flag_ImposeRotation         (1 << 29) // Impose axis rotation
+#define DNM_Flag_PlatformLock           (1 << 30) // Keep on platform
+#define DNM_Flag_ImposeTranslation      (1 << 31) // Impose translation
 
 // Info/verification flags
-#define dynamicsEndFlagSizeBase               (1 <<  0) // Base size dynamics
-#define dynamicsEndFlagSizeAdvanced           (1 <<  1) // Advanced size dynamics
-#define dynamicsEndFlagSizeComplex            (1 <<  2) // Complex size dynamics
-#define dynamicsEndFlagReserved               (1 <<  3)
-#define dynamicsEndFlagMechanicsChanged       (1 <<  4)
-#define dynamicsEndFlagPlatformCrash          (1 <<  5)
-#define dynamicsEndFlagCanFall                (1 <<  6)
-#define dynamicsEndFlagIsInit                 (1 <<  7)
-#define dynamicsEndFlagSpiderMechanic         (1 <<  8)
-#define dynamicsEndFlagIsShoot                (1 <<  9)
-#define dynamicsEndFlagSafeValid              (1 << 10)
-#define dynamicsEndFlagComputeInvertMatrix    (1 << 11)
-#define dynamicsEndFlagChangeScale            (1 << 12)
-#define dynamicsEndFlagExec                   (1 << 13)
-#define dynamicsEndFlagCollisionReport        (1 << 14)
-#define dynamicsEndFlagNoGravity              (1 << 15)
-#define dynamicsEndFlagStop                   (1 << 16)
-#define dynamicsEndFlagSlidingGround          (1 << 17)
-#define dynamicsEndFlagAlways                 (1 << 18)
-#define dynamicsEndFlagCrash                  (1 << 19)
-#define dynamicsEndFlagSwim                   (1 << 20)
-#define dynamicsEndFlagNeverFall              (1 << 21)
-#define dynamicsEndFlagHanging                (1 << 22)
-#define dynamicsEndFlagWallAdjust             (1 << 23)
-#define dynamicsEndFlagActorMove              (1 << 24)
-#define dynamicsEndFlagForceSafeWalk          (1 << 25)
-#define dynamicsEndFlagDontUseNewMechanic     (1 << 26)
+#define DNM_EndFlag_BaseSize              (1 <<  0) // Base size dynamics
+#define DNM_EndFlag_AdvancedSize          (1 <<  1) // Advanced size dynamics
+#define DNM_EndFlag_ComplexSize           (1 <<  2) // Complex size dynamics
+#define DNM_EndFlag_Reserved              (1 <<  3)
+#define DNM_EndFlag_MechanicsChanged      (1 <<  4)
+#define DNM_EndFlag_PlatformCrash         (1 <<  5)
+#define DNM_EndFlag_CanFall               (1 <<  6)
+#define DNM_EndFlag_IsInit                (1 <<  7)
+#define DNM_EndFlag_SpiderMechanic        (1 <<  8)
+#define DNM_EndFlag_IsShoot               (1 <<  9)
+#define DNM_EndFlag_SafeValid             (1 << 10)
+#define DNM_EndFlag_ComputeInvertMatrix   (1 << 11)
+#define DNM_EndFlag_ChangeScale           (1 << 12)
+#define DNM_EndFlag_Exec                  (1 << 13)
+#define DNM_EndFlag_CollisionReport       (1 << 14)
+#define DNM_EndFlag_NoGravity             (1 << 15)
+#define DNM_EndFlag_Stop                  (1 << 16)
+#define DNM_EndFlag_SlidingGround         (1 << 17)
+#define DNM_EndFlag_Always                (1 << 18)
+#define DNM_EndFlag_Crash                 (1 << 19)
+#define DNM_EndFlag_Swim                  (1 << 20)
+#define DNM_EndFlag_NeverFall             (1 << 21)
+#define DNM_EndFlag_Hanging               (1 << 22)
+#define DNM_EndFlag_WallAdjust            (1 << 23)
+#define DNM_EndFlag_ActorMove             (1 << 24)
+#define DNM_EndFlag_ForceSafeWalk         (1 << 25)
+#define DNM_EndFlag_DontUseNewMechanic    (1 << 26)
 
 // Obstacle types
-#define dynamicsObstacleTypeNoObstacle     0x00000000
-#define dynamicsObstacleTypeGround         0x00000001
-#define dynamicsObstacleTypeWall           0x00000004
-#define dynamicsObstacleTypeCeiling        0x00000010
-#define dynamicsObstacleTypeWater          0x00000040
-#define dynamicsObstacleTypeForceMobile    0x00000080
-#define dynamicsObstacleTypeMobile         0x00010000
-#define dynamicsObstacleTypeError          0x80000000
-
+enum DNM::ObstacleType : unsigned {
+  None        = 0x00000000,
+  Ground      = 0x00000001,
+  Wall        = 0x00000004,
+  Ceiling     = 0x00000010,
+  Water       = 0x00000040,
+  ForceMobile = 0x00000080,
+  Mobile      = 0x00010000,
+  Error       = 0x80000000,
+};
+  
 /// Axis-angle
 struct DNM::stDynamicsRotation : structure {
   float32 angle;
