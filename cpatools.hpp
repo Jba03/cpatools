@@ -581,6 +581,7 @@ struct stBoundingSphere;
 
 /// Geometry module
 namespace GEO {
+enum ElementType : int;
 union uVisualObject;
 struct stGeometricObject;
 struct stVisualSet;
@@ -2308,17 +2309,19 @@ struct COL::stBoundingSphere {
 
 #pragma mark - GEO
 
-#define GEO_VisualElementIndexedTriangles     1
-#define GEO_VisualElementFacemap              2
-#define GEO_VisualElementSprite               3
-#define GEO_VisualElementTMesh                4
-#define GEO_VisualElementPoints               5
-#define GEO_VisualElementLines                6
-#define GEO_VisualElementIndexedSpheres       7
-#define GEO_VisualElementAABB                 8
-#define GEO_VisualElementCones                9
-#define GEO_VisualElementAltimap              11
-#define GEO_VisualElementDeformationSetInfo   13
+enum GEO::ElementType : int {
+  IndexedTriangles = 1,
+  Facemap = 2,
+  Sprite = 3,
+  TMesh = 4,
+  Points = 5,
+  Lines = 6,
+  IndexedSpheres = 7,
+  AABB = 8,
+  Cones = 9,
+  Altimap = 11,
+  DeformationSetInfo = 13,
+};
 
 union GEO::uVisualObject {
   pointer<GEO::stGeometricObject> geometricObject;
