@@ -558,6 +558,7 @@ struct stMechanicsReport;
 
 /// Collision module
 namespace COL {
+enum ElementType : int;
 struct stOctreeNode;
 struct stOctree;
 struct stCollideObject;
@@ -1973,18 +1974,20 @@ struct SECT::stSector {
 #pragma mark - COL -
 
 // Collide element type
-#define COL_CollideElementIndexedTriangles    1
-#define COL_CollideElementFacemap             2
-#define COL_CollideElementSprite              3
-#define COL_CollideElementTMesh               4
-#define COL_CollideElementPoints              5
-#define COL_CollideElementLines               6
-#define COL_CollideElementIndexedSpheres      7
-#define COL_CollideElementAABB                8
-#define COL_CollideElementCones               9
-#define COL_CollideElementDeformationSetInfo  13
-#define COL_CollideElementInvalid             0xFFFF
-
+enum COL::ElementType : int {
+  IndexedTriangles = 1,
+  Facemap = 2,
+  Sprite = 3,
+  TMesh = 4,
+  Points = 5,
+  Lines = 6,
+  IndexedSpheres = 7,
+  AABB = 8,
+  Cones = 9,
+  DeformationSetInfo = 13,
+  Invalid = 0xFFFF,
+};
+  
 // Material identifier mask
 #define COL_MaterialIdMask_None              (0 << 0)
 #define COL_MaterialIdMask_Slide             (1 << 0)
