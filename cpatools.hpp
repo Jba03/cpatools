@@ -1504,13 +1504,13 @@ struct CINE::stCineManager : structure {
   /// List of level cinematics
   stDoublyLinkedList<stCine> cineList;
   /// Padding
-#if CPA_PLATFORM == CPA_PLATFORM_PS2
+#if platform == PS2
   padding(4)
 #endif
   /// Force camera transform
   stTransform fixedCameraTransform;
   /// Padding
-#if CPA_PLATFORM == CPA_PLATFORM_PS2
+#if platform == PS2
   padding(2)
 #endif
   /// Currently active cutscene camera
@@ -1654,7 +1654,7 @@ struct DNM::stDynamicsBaseBlock : structure {
   /// Collision report copied from mechanics
   pointer<stDynamicsReport> report;
   
-#if CPA_ENGINE_VERSION == CPA_ENGINE_VERSION_R3 && CPA_PLATFORM == CPA_PLATFORM_PS2
+#if engine == R3 && platform == PS2
   /// Padding
   padding(8)
 #endif
@@ -2640,19 +2640,6 @@ struct stSuperObject : structure {
   auto begin() const -> iterator { return firstChild; }
   auto end() const -> iterator { return lastChild; }
   
-//  stSuperObject() {}
-//
-//  void * operator new (size_t sz) {
-//    printf("aa-dealloc\n");
-//    return new ;
-//    //return delete[] static_cast<char*>(p);
-//  }
-//
-//  void operator delete (void *p) {
-//    printf("aa-dealloc\n");
-//    return delete[] static_cast<char*>(p);
-//  }
-  
 private:
   template <typename F, typename UserData>
   void _recurse(stSuperObject *root, UserData userdata, const F& f) {
@@ -2811,13 +2798,13 @@ struct AI::stActionParam : structure {
 };
 
 struct AI::stActionTableEntry : structure {
-#if CPA_PLATFORM == CPA_PLATFORM_GCN
+#if platform == GCN
   string<0x50> name;
   uint32 param[8];
   padding(4) /* ? */
   padding(4) /* ? */
   pointer<string<>> namePointer; /* ? */
-#elif CPA_PLATFORM == CPA_PLATFORM_PS2
+#elif platform == PS2
   stActionParam actionParam;
 #endif
   pointer<stNodeInterpret> node;
