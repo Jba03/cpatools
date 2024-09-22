@@ -82,6 +82,9 @@
 #include <string>
 #include <fstream>
 
+#include <any>
+#include <unordered_map>
+
 namespace cpa {
 
 struct _range {
@@ -415,6 +418,9 @@ struct allocable {
   }
 };
 
+using userdata_store = std::unordered_map<std::string, std::any>;
+CPA_EXTERN std::unordered_map<memory::target_address_type, userdata_store> userdata;
+
 }; /* memory */
 
 using char8   = memory::type<int8_t, int8_t>;
@@ -574,6 +580,7 @@ namespace GEO {
 struct stGeometricObject;
 struct stVisualSet;
 struct stVisualElementIndexedTriangles;
+struct stColor;
 union uVisualObject;
 enum ElementType : int;
 }
@@ -593,9 +600,11 @@ struct stGameMaterial;
 namespace GLI {
 struct stVertex2D;
 struct stCamera;
+struct stLight;
 struct stTexture;
 struct stAnimatedTextureNode; // todo
 struct stMaterial;
+struct stMultiTextureMaterial;
 }
 
 /// Waypoint module
@@ -639,8 +648,21 @@ using Index3D = uint16;
 /** ``STRUCTURE BEGIN`` **/
 /*************************/
 
-#define CPA_STRUCT
-struct structure : memory::allocable {};
+struct structure : memory::allocable {
+  template<typename T>
+  void setUserData(std::string key, T value) {
+    memory::target_address_type addr = pointer<>(this).pointeeAddress().effectiveAddress();
+    memory::userdata_store& map = memory::userdata[addr];
+    map[key] = std::make_any<T>(value);
+  }
+  
+  template<typename T>
+  T getUserData(std::string key) {
+    memory::target_address_type addr = pointer<>(this).pointeeAddress().effectiveAddress();
+    memory::userdata_store& map = memory::userdata[addr];
+    return std::any_cast<T>(map[key]);
+  }
+};
 
 #pragma mark - Common types -
 
@@ -917,10 +939,10 @@ struct LinkedList {
   int32 numEntries;
   
   template<typename F> void forEach(const F& f, void *userdata = nullptr) {
-    //    pointer<T> c = first;
-    //    for (int i = 0; i < numEntries; i++) {
-    //      f(c++, userdata);
-    //    }
+    //pointer<T> c = first;
+//    for (auto i : range(numEntries)) {
+//      f(first+i, userdata);
+//    }
     try {
       for (T *c = first; c; c = c->next) {
         f(c, userdata);
@@ -1944,9 +1966,15 @@ struct stEngineObject : structure {
 
 #pragma mark - SECT -
 
+struct ListOfStaticLights {
+  pointer<GLI::stLight> light;
+  pointer<ListOfStaticLights> next;
+  pointer<ListOfStaticLights> prev;
+};
+
 struct SECT::stSector : structure {
   stDoublyLinkedList<> characterList;
-  stDoublyLinkedList<> staticLightList;
+  stDoublyLinkedList<ListOfStaticLights> staticLightList;
   stDoublyLinkedList<> dynamicLightList;
   stDoublyLinkedList<> graphicSectorList;
   stDoublyLinkedList<> collisionSectorList;
@@ -2366,8 +2394,8 @@ struct GEO::stVisualSet : structure {
   float32 lastDistance;
   int16 numLodDefinitions;
   int16 type;
-  pointer<float32> thresholdTable;
-  pointer<uVisualObject> d_p_stLodDefinitions;
+  pointer<float32> LODThresholdTable;
+  pointer<uVisualObject> LODDefinitions;
   doublepointer<> hRLI;
   int32 numRLI;
 };
@@ -2395,6 +2423,13 @@ struct GEO::stVisualElementIndexedTriangles : structure {
   uint8 portalVisibility;
   padding(3)
   uint32 vao[4];
+};
+
+struct GEO::stColor {
+  float32 r;
+  float32 g;
+  float32 b;
+  float32 a;
 };
 
 #pragma mark - GMT
@@ -2888,12 +2923,104 @@ struct GLI::stCamera : structure {
   uint8 mirrored;
 };
 
+struct GLI::stLight {
+  int32 active;
+  int32 isZBuffered;
+  int32 lightType;
+  float32 far;
+  float32 near;
+  float32 littleAlpha;
+  float32 bigAlpha;
+  float32 littleTangent;
+  float32 bigTangent;
+#if engine == R3 && platform == PS2
+  padding(12)
+#elif engine == R3 && platform == GCN
+  float32 attenuation0;
+  float32 attenuation1;
+  float32 attenuation2;
+#endif
+  stTransform transform;
+  GEO::stColor color;
+  float32 sqNear;
+  float32 sqFar;
+  float32 sqDiv;
+  
+};
+
 struct GLI::stTexture : structure {
+  uint32 format;
+  uint8 available;
+  uint8 textureQuality;
+  uint8 depthQuality;
+  padding(1)
+  pointer<> bitmapData;
+  pointer<> colorTable;
+  pointer<> specularParam;
+  uint32 caps;
+  uint16 height;
+  uint16 width;
+  uint16 realHeight;
+  uint16 realWidth;
+  float32 addU;
+  float32 addV;
+  uint32 incrementEnable;
+  uint32 chromaKeyColor;
+  uint32 blendColor;
+  int32 numLOD;
+  uint32 compressionCounter;
+  uint32 compressionType;
+  uint32 mipMapType;
+  pointer<stTexture> substitutionTexture;
+  uint8 bilinearMode;
+  uint8 cyclingMode;
+  string<128> filename;
+};
+
+struct GLI::stAnimatedTextureNode : structure {
+  
+};
+
+struct GLI::stMultiTextureMaterial : structure {
+  pointer<stTexture> texture;
+  uint8 cOperator;
+  uint8 cColorOperator;
+  uint8 cUVSource;
+  uint8 cFlags;
+  uint32 textureProperties;
+  /* ... */
   
 };
 
 struct GLI::stMaterial : structure {
-  
+  uint32 type;
+  GEO::stColor ambientColor;
+  GEO::stColor diffuseColor;
+  GEO::stColor specularColor;
+  GEO::stColor baseColor;
+#if engine == R3 && platform == PS2
+  uint32 additionalType;
+  int32 specularExponent;
+  pointer<stTexture> texture;
+  float32 scrollingOffsetU;
+  float32 scrollingOffsetV;
+  float32 constantOffsetU;
+  float32 constantOffsetV;
+  int32 incrementEnabled;
+#endif
+  uint32 actualRefreshCounter;
+  pointer<stAnimatedTextureNode> firstAnimatedTextureNode;
+  pointer<stAnimatedTextureNode> actualAnimatedTextureNode;
+  int32 numDisplayNodes;
+  int32 textureDisplayTime;
+  uint8 isLocked;
+//#if engine == R3 && platform == PS2
+  padding(3)
+//#endif
+  uint32 flags;
+  uint32 multiTextureType;
+  uint32 numTextureStages;
+  stMultiTextureMaterial multiTextureMaterial[4];
 };
 
 #pragma mark - WP
@@ -4186,8 +4313,10 @@ private:
 // these are probably part of some structure
 # define PTR_MenuSelectionV         0x805D884C
 # define PTR_MenuOptionRumble       0x805D89B0
+
 # define PTR_MechanicsObstacleArray 0x805D73F8
 # define PTR_CollisionGV            0x803DC4F4
+# define PTR_GLI_BitmapBuffer       0x80EEFAE8 // dptr
 #endif
 
 #pragma mark - Globals -
@@ -4244,8 +4373,9 @@ struct __default_allocator {
 
 allocator_function alloc = __default_allocator::alloc;
 deallocator_function dealloc = __default_allocator::dealloc;
+std::unordered_map<memory::target_address_type, userdata_store> userdata;
 
-};
+}; /* memory */
 
 namespace global {
 
