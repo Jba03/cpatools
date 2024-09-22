@@ -804,19 +804,19 @@ struct matrix {
     return ((*this) * stVector4D(v.x(), v.y(), v.z(), 1.0f));
   }
   
-  static auto make_translation(stVector3D p) {
+  static auto makeTranslation(stVector3D p) {
     matrix result = identity();
     for (auto i : range(3)) result(Rows-1,i) = p[i];
     return result;
   }
   
-  static auto make_scale(stVector3D p){
+  static auto makeScale(stVector3D p){
     matrix result = identity();
     for (auto i : range(3)) result(i,i) = p[i];
     return result;
   }
   
-  static auto make_perspective(float fovY, float aspect, float near, float far) {
+  static auto makePerspective(float fovY, float aspect, float near, float far) {
     float ct = 1.0f / std::tan(fovY / 2.0f);
     matrix<4,4,T> result = identity();
     result(0,0) = ct / aspect;
@@ -828,7 +828,7 @@ struct matrix {
     return result;
   }
   
-  static auto make_lookat(stVector3D eye, stVector3D center, stVector3D up) {
+  static auto makeLookAt(stVector3D eye, stVector3D center, stVector3D up) {
     stVector3D n = (eye - center).normalize();
     stVector3D u = up.cross(n).normalize();
     stVector3D v = n.cross(u);
@@ -988,7 +988,7 @@ struct stTransform : structure {
     Rotation = 5,
     RotationZoom = 6,
     RotationScale = 7,
-    RotationScaleComplex = 8,
+    ComplexRotationScale = 8,
     Undefined = 9,
   };
   
@@ -1069,8 +1069,8 @@ struct stTransform : structure {
         return "RotationZoom";
       case RotationScale:
         return "RotationScale";
-      case RotationScaleComplex:
-        return "RotationScaleComplex";
+      case ComplexRotationScale:
+        return "ComplexRotationScale";
       case Undefined:
         return "Undefined";
       default:
@@ -1079,14 +1079,10 @@ struct stTransform : structure {
   }
 };
 
-#pragma mark - stParallelBox
-
 struct stParallelBox : structure {
   stVector3D min;
   stVector3D max;
 };
-
-#pragma mark - stAlways
 
 struct stAlwaysModelList : structure {
   pointer<stAlwaysModelList> next;
@@ -1104,17 +1100,11 @@ struct stAlways : structure {
   pointer<stSuperObject> alwaysGeneratorSuperobjects;
 };
 
-#pragma mark - stObjectType
-
-/// Family object type
-#define objectTypeFamily    0
-/// Model object type
-#define objectTypeModel     1
-/// Instance object type
-#define objectTypeInstance  2
-
-/// Function to resolve object type names
-using ObjectNameResolver = std::function<std::string(int, int)>;
+enum ObjectType {
+  Family = 0,
+  Model = 1,
+  Instance = 2
+};
 
 /// Object identifier
 struct stObjectTypeElement : structure {
@@ -1951,7 +1941,7 @@ struct stEngineObject : structure {
   pointer<MS::stMSSound> msSound;
   
   /// Get the name of this actor in order of [Instance, Model, Family]
-  inline auto name(int16_t type = objectTypeInstance) -> std::string;
+  inline auto name(ObjectType type = Instance) -> std::string;
   /// Get the superobject associated with this actor
   inline auto superobject() -> pointer<stSuperObject>;
   
@@ -1985,13 +1975,13 @@ using stListOfSectorsInSoundInteraction = LinkedListElement<stSuperObject>;
 }
 
 struct SECT::stSector : structure {
-  stDoublyLinkedList<stListOfCharacters> characterList;
-  stDoublyLinkedList<stListOfStaticLights> staticLightList;
-  stDoublyLinkedList<stListOfDynamicLights> dynamicLightList;
-  stDoublyLinkedList<stListOfSectorsInGraphicInteraction> graphicSectorList;
-  stDoublyLinkedList<stListOfSectorsInCollisionInteraction> collisionSectorList;
-  stDoublyLinkedList<stListOfSectorsInActivityInteraction> activitySectorList;
-  stDoublyLinkedList<stListOfSectorsInSoundInteraction> soundSectorList;
+  stDoublyLinkedList<stListOfCharacters> characters;
+  stDoublyLinkedList<stListOfStaticLights> staticLights;
+  stDoublyLinkedList<stListOfDynamicLights> dynamicLights;
+  stDoublyLinkedList<stListOfSectorsInGraphicInteraction> sectorsInGraphInteraction;
+  stDoublyLinkedList<stListOfSectorsInCollisionInteraction> sectorsInCollisionInteraction;
+  stDoublyLinkedList<stListOfSectorsInActivityInteraction> sectorsInActivityInteraction;
+  stDoublyLinkedList<stListOfSectorsInSoundInteraction> sectorsInSoundInteraction;
   stDoublyLinkedList<> soundEventList;
   stVector3D min;
   stVector3D max;
@@ -3209,7 +3199,7 @@ auto stEngineStructure::loadLevel(std::string levelName) -> void {
 
 #pragma mark EngineObject
 
-auto stEngineObject::name(int16_t type) -> std::string {
+auto stEngineObject::name(ObjectType type) -> std::string {
   std::string name;
   for (int i : {stdGame->instanceType, stdGame->modelType, stdGame->familyType})
     if ((name = global::objectTypeNameLookup(type, i)) != "Invalid name") break;
@@ -4552,9 +4542,9 @@ auto objectTypeNameLookup(int type, int idx) -> std::string {
   if (objectNameCacheTable.find(g_stEngineStructure->currentLevelName) != objectNameCacheTable.end()) {
     objectNameCache& cache = objectNameCacheTable[g_stEngineStructure->currentLevelName];
     try {
-      if (type == objectTypeFamily) return cache.familyNames.at(idx);
-      if (type == objectTypeModel) return cache.modelNames.at(idx);
-      if (type == objectTypeInstance) return cache.instanceNames.at(idx);
+      if (type == ObjectType::Family) return cache.familyNames.at(idx);
+      if (type == ObjectType::Model) return cache.modelNames.at(idx);
+      if (type == ObjectType::Instance) return cache.instanceNames.at(idx);
     } catch (std::out_of_range& e) {
       return "Invalid name";
     }
