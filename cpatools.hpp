@@ -572,6 +572,7 @@ struct stIndexedAlignedBox;
 struct stCollideElementAlignedBoxes;
 struct stGVForCollision;
 struct stBoundingSphere;
+struct stParallelBox;
 enum ElementType : int;
 }
 
@@ -581,6 +582,7 @@ struct stGeometricObject;
 struct stVisualSet;
 struct stVisualElementIndexedTriangles;
 struct stColor;
+struct stParallelBox;
 union uVisualObject;
 enum ElementType : int;
 }
@@ -1077,11 +1079,6 @@ struct stTransform : structure {
         return "Invalid";
     }
   }
-};
-
-struct stParallelBox : structure {
-  stVector3D min;
-  stVector3D max;
 };
 
 struct stAlwaysModelList : structure {
@@ -2338,6 +2335,11 @@ struct COL::stBoundingSphere : structure {
 #endif
 };
 
+struct COL::stParallelBox : structure {
+  stVector3D min;
+  stVector3D max;
+};
+
 #pragma mark - GEO
 
 enum GEO::ElementType : int {
@@ -2434,6 +2436,11 @@ struct GEO::stColor {
   float32 a;
 };
 
+struct GEO::stParallelBox : structure {
+  stVector3D min;
+  stVector3D max;
+};
+
 #pragma mark - GMT
 
 struct GMT::stCollideMaterial : structure {
@@ -2527,9 +2534,9 @@ struct stSuperObject : structure {
   /// General flags
   uint32 flags;
   /// The visual bounding box
-  pointer<stParallelBox> visualBBox;
+  pointer<GEO::stParallelBox> visualBoundingBox;
   /// The bounding box of the collision of this object
-  pointer<stParallelBox> collideBBox;
+  pointer<COL::stParallelBox> collideBoundingBox;
   /// Approximate lookat vector
   stVector3D semiLookAt;
   /// Render transparency
