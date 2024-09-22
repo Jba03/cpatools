@@ -967,6 +967,14 @@ template<typename T = uint32> using stSingleLinkedList = LinkedList<T, LinkedLis
 template<typename T = uint32> using stDoublyLinkedList = LinkedList<T, LinkedListType::Single>;
 template<typename T = uint32> using stLinkedList = stDoublyLinkedList<T>;
 
+template<typename T>
+struct LinkedListElement {
+  pointer<T> data;
+  pointer<LinkedListElement> next;
+  pointer<LinkedListElement> prev;
+  pointer<stLinkedList<>> list;
+};
+
 #pragma mark - stTransform
 
 /// World transform
@@ -1966,20 +1974,24 @@ struct stEngineObject : structure {
 
 #pragma mark - SECT -
 
-struct ListOfStaticLights {
-  pointer<GLI::stLight> light;
-  pointer<ListOfStaticLights> next;
-  pointer<ListOfStaticLights> prev;
-};
+namespace SECT {
+using stListOfCharacters = LinkedListElement<stSuperObject>;
+using stListOfStaticLights = LinkedListElement<GLI::stLight>;
+using stListOfDynamicLights = LinkedListElement<GLI::stLight>;
+using stListOfSectorsInGraphicInteraction = LinkedListElement<stSuperObject>;
+using stListOfSectorsInCollisionInteraction = LinkedListElement<stSuperObject>;
+using stListOfSectorsInActivityInteraction = LinkedListElement<stSuperObject>;
+using stListOfSectorsInSoundInteraction = LinkedListElement<stSuperObject>;
+}
 
 struct SECT::stSector : structure {
-  stDoublyLinkedList<> characterList;
-  stDoublyLinkedList<ListOfStaticLights> staticLightList;
-  stDoublyLinkedList<> dynamicLightList;
-  stDoublyLinkedList<> graphicSectorList;
-  stDoublyLinkedList<> collisionSectorList;
-  stDoublyLinkedList<> activitySectorList;
-  stDoublyLinkedList<> soundSectorList;
+  stDoublyLinkedList<stListOfCharacters> characterList;
+  stDoublyLinkedList<stListOfStaticLights> staticLightList;
+  stDoublyLinkedList<stListOfDynamicLights> dynamicLightList;
+  stDoublyLinkedList<stListOfSectorsInGraphicInteraction> graphicSectorList;
+  stDoublyLinkedList<stListOfSectorsInCollisionInteraction> collisionSectorList;
+  stDoublyLinkedList<stListOfSectorsInActivityInteraction> activitySectorList;
+  stDoublyLinkedList<stListOfSectorsInSoundInteraction> soundSectorList;
   stDoublyLinkedList<> soundEventList;
   stVector3D min;
   stVector3D max;
