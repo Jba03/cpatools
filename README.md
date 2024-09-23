@@ -1,11 +1,6 @@
-**cpatools** is a single-header interface for various games created with the CPA engine.
-It aims to provide a complete, documented interface of the engine, as well as adding the necessary tools to enable realtime modification.
+**cpatools** is a single-header library for various games created with the CPA engine.
+It aims to provide a complete, documented interface of the engine, as well as adding the tools necessary to enable modding.
 
-At the cost of runtime version compatibility, the interface of cpatools is static - meaning it may only be compiled for use with _one_ specific platform/version of the engine.
-This also means it operates directly on the memory of the game, which is much faster than reading all structures and types dynamically.
-
-
-**Usage**
 ```cpp
 // Implementing the static interface.
 #define CPATOOLS_IMPLEMENTATION
