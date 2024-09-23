@@ -790,6 +790,11 @@ struct matrix {
     return result;
   }
   
+  template <unsigned R, unsigned C>
+  auto operator*=(matrix<R, C, T> m) {
+    return (*this = *this * m);
+  }
+  
   auto operator*(stVector4D v) -> stVector4D {
     stVector4D result;
     for (auto y : range(Rows)) {
@@ -811,9 +816,36 @@ struct matrix {
     return result;
   }
   
-  static auto makeScale(stVector3D p){
+  static auto makeScale(stVector3D p) {
     matrix result = identity();
     for (auto i : range(3)) result(i,i) = p[i];
+    return result;
+  }
+  
+  static matrix makeRotationX(float radians) {
+    matrix result = identity();
+    result(1,1) = cos(radians);
+    result(1,2) = sin(radians);
+    result(2,1) = -sin(radians);
+    result(2,2) = cos(radians);
+    return result;
+  }
+  
+  static matrix makeRotationY(float radians) {
+    matrix result = identity();
+    result(0,0) = cos(radians);
+    result(0,2) = -sin(radians);
+    result(2,0) = sin(radians);
+    result(2,2) = cos(radians);
+    return result;
+  }
+  
+  static matrix makeRotationZ(float radians) {
+    matrix result = identity();
+    result(0,0) = cos(radians);
+    result(0,1) = sin(radians);
+    result(1,0) = -sin(radians);
+    result(1,1) = cos(radians);
     return result;
   }
   
