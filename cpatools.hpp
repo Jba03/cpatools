@@ -2439,24 +2439,41 @@ struct GEO::stVisualElementIndexedTriangles : structure {
   pointer<GLI::stMaterial> visualMaterial;
   int16 numFaces;
   int16 numUVs;
-  int16 numUVStages;
+  int16 numUVMaps;
   padding(2)
   pointer<uint16> faceIndices;
 #if game == R3_GCN
   padding(4)
 #endif
-  pointer<> faceUVIndices;
+  pointer<uint16> faceUVIndices;
   pointer<stVector3D> faceNormals;
-  pointer<> UVElements;
+  pointer<stVector2D> UVElements;
   pointer<> edges;
   pointer<> adjacentFaces;
-  pointer<> thisIndexList;
-  int16 numUsedIndices;
-  int16 boundingBoxIndex;
+  pointer<uint16> vertexIndices;
+  int16 numVertexIndices;
+  int16 parallelBoxIndex;
   uint32 displayList;
-  pointer<> unknown;
+#if engine == R3 && platform == PS2
+  pointer<> specialValue;
+#endif
   uint8 portalVisibility;
+  
+#if engine == R3
+ #if platform != PS2
+  padding(1)
+  uint16 numMappingEntries;
+  pointer<uint16> mappingVertices;
+  pointer<uint16> mappingUVs;
+  uint16 numTriangleStrip;
+  uint16 numTriangleIsolate;
+  pointer<uint16> triangleStripIndices;
+  pointer<uint16> triangleIsolateIndices;
+ #else
   padding(3)
+ #endif
+#endif
+  
   uint32 vao[4];
 };
 
@@ -3010,10 +3027,10 @@ struct GLI::stAnimatedTextureNode : structure {
 
 struct GLI::stMultiTextureMaterial : structure {
   pointer<stTexture> texture;
-  uint8 cOperator;
-  uint8 cColorOperator;
-  uint8 cUVSource;
-  uint8 cFlags;
+  uint8 textureOp;
+  uint8 colorOp;
+  uint8 uvSource;
+  uint8 flags;
   uint32 textureProperties;
   /* ... */
   
