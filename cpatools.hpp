@@ -2990,6 +2990,14 @@ struct GLI::stLight {
   float32 sqFar;
   float32 sqDiv;
   
+  enum Type {
+    Parallel = 1,
+    Spherical = 2,
+    Spot = 3,
+    Ambient = 4,
+    LimitParallel = 5,
+    Fog = 6
+  };
 };
 
 struct GLI::stTexture : structure {
