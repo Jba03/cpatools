@@ -601,6 +601,7 @@ struct stGameMaterial;
 namespace GLI {
 struct stVertex2D;
 struct stCamera;
+struct stZBufferForLight;
 struct stLight;
 struct stTexture;
 struct stAnimatedTextureNode; // todo
@@ -2967,10 +2968,23 @@ struct GLI::stCamera : structure {
   uint8 mirrored;
 };
 
+struct GLI::stZBufferForLight {
+  int32 sizeX;
+  int32 sizeY;
+  float32 coefX;
+  float32 coefY;
+  pointer<> ZBufferMap;
+  pointer<> middleZBufferMap;
+};
+
 struct GLI::stLight {
   int32 active;
   int32 isZBuffered;
-  int32 lightType;
+  //int32 lightType;
+  
+  int16 lightType;
+  padding(2);
+  
   float32 far;
   float32 near;
   float32 littleAlpha;
@@ -2985,6 +2999,7 @@ struct GLI::stLight {
   float32 attenuation2;
 #endif
   stTransform transform;
+  stZBufferForLight zbuffer;
   GEO::stColor color;
   float32 sqNear;
   float32 sqFar;
