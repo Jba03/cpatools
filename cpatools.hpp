@@ -463,6 +463,7 @@ struct stEngineObject;
 struct stStandardGameInfo;
 struct st3DData;
 struct stCollideSet;
+struct stAnim3D;
 // }
 
 /// Input module
@@ -636,6 +637,8 @@ struct stEventParametersPlay;
 struct stEventParametersExtraAll;
 union stEventParameters;
 };
+
+#pragma mark ---
 
 using Index3D = uint16;
 
@@ -1163,6 +1166,32 @@ struct stObjectType : structure {
   stDoublyLinkedList<stObjectTypeElement> instance;
 };
 
+#pragma mark - 3DData
+
+struct stState : structure {
+  string<0x50> name;
+  pointer<stState> next;
+  pointer<stState> prev;
+  pointer</**/> parentList;
+  pointer<stAnim3D> animation;
+};
+
+struct st3DData : structure {
+  pointer<> initialState;
+  pointer<> currentState;
+  pointer<> firstStateOfAction;
+  pointer<> initialObjectsTable;
+  pointer<> currentObjectsTable;
+  pointer<> family;
+};
+
+struct stFamilyList : structure {
+  pointer<stFamilyList> next;
+  pointer<stFamilyList> prev;
+  pointer<LinkedListElement<stFamilyList>> list;
+  int32 objectFamilyType;
+};
+
 #pragma mark - Engine
 
 /// High-resolution counter
@@ -1246,7 +1275,7 @@ struct stEngineStructure : structure {
   pointer<> viewportArray;
   stDoublyLinkedList<> cameraList;
   pointer<> drawSem;
-  stDoublyLinkedList<> familyList;
+  stDoublyLinkedList<stFamilyList> familyList;
   stDoublyLinkedList<> alwaysList;
   stDoublyLinkedList<stSuperObject> mainCharacterList;
   pointer<stSuperObject> standardCamera;
@@ -1425,8 +1454,59 @@ struct RND::stRandom : structure {
 
 #pragma mark - 3D
 
-struct stAnim3D : structure {
+enum EventType {
+  SoundEvent = 0,
+  MechanicsEvent = 1,
+  GenerateEvent = 2,
+  GenericEvent = 3,
+};
+
+union uEventData {
+  doublepointer<SND::stBlockEvent> soundEvent;
+};
+
+struct stEventInTable : structure {
+  uint32 unknown;
+  /// Event-specific data
+  uEventData eventData;
+  /// Type of this event
+  uint8 eventType;
+  uint8 priority;
+  uint8 firstCall;
+  uint8 period;
+  uint32 semaphoreID;
   
+  uint32 unknown2;
+};
+  
+struct stEvent : structure {
+  /// Pointer to the event in the global event table.
+  pointer<stEventInTable> eventInTable;
+  /// Index of this element in the global event table.
+  uint16 eventTableIndex;
+  uint16 frameNumber;
+  uint16 channelNumber;
+  uint16 isLocalized;
+  //pointer<stEventInTable> eventInTable2;
+};
+
+struct stAnim3D : structure {
+  /// The filename of this animation
+  string<0x50> name;
+  /// Number of frames in this animation
+  uint16 numFrames;
+  /// The rate at which the animation is played
+  uint8 frameRate;
+  
+  uint8 maxNumElements;
+  /// The list of events in this animation
+  pointer<stEvent> eventList;
+  pointer</*stMorphData*/> morphDataList;
+  ushort numGeneralA3D;
+  /// The number of events in this animation
+  uint8 numEvents;
+  ///
+  uint8 mergeAnimationFlag;
 };
 
 struct stSubAnim : structure {
@@ -2968,7 +3048,7 @@ struct GLI::stCamera : structure {
   uint8 mirrored;
 };
 
-struct GLI::stZBufferForLight {
+struct GLI::stZBufferForLight : structure {
   int32 sizeX;
   int32 sizeY;
   float32 coefX;
@@ -2977,7 +3057,7 @@ struct GLI::stZBufferForLight {
   pointer<> middleZBufferMap;
 };
 
-struct GLI::stLight {
+struct GLI::stLight : structure {
   int32 active;
   int32 isZBuffered;
   //int32 lightType;
@@ -3127,6 +3207,9 @@ struct MS::stMSWay : structure {
   padding(3)
 };
 
+struct MS::stMSSound : structure {
+  
+};
 
 #pragma mark - SND
 
@@ -4539,12 +4622,12 @@ static bool loadLevel(const std::filesystem::path path, bool forceReload = false
     ptr.replace_filename(ptr.filename().string() + s + ".ptr");
     
     if (!std::filesystem::exists(lvl)) {
-      std::cerr << "failed to load " << lvl << "\n";
+      //std::cerr << "failed to load " << lvl << "\n";
       return false;
     }
     
     if (!std::filesystem::exists(ptr)) {
-      std::cerr << "failed to load " << ptr << "\n";
+     // std::cerr << "failed to load " << ptr << "\n";
       return false;
     }
     
