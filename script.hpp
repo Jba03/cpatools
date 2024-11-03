@@ -499,7 +499,6 @@ struct TranslationEngine {
   pointer<Node> currentNode;
 };
 
-
 #pragma mark - Source to Tree
 
 struct Lexer {

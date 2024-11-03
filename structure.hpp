@@ -16,12 +16,10 @@ struct stLanguageStructure;
 struct stRandom;
 struct stAlways;
 struct stObjectType;
-
 // IPT
 struct stInputStructure;
 struct stInputEntryElement;
 struct stPadReadingOutput;
-
 // Object
 struct stSuperObject;
 struct stSector;
@@ -37,7 +35,6 @@ struct stMicro;
 struct stMSSound;
 struct stInstantiatedPhysicalObject;
 struct stPhysicalObject;
-
 // AI
 struct stBrain;
 struct stMind;
@@ -50,11 +47,9 @@ struct stScriptAI;
 struct stMacro;
 struct stMacroList;
 struct stBehavior;
-
 // CINE
 struct stCine;
 struct stCineActor;
-
 // DNM
 struct stDynam;
 struct stDynamics;
@@ -65,20 +60,17 @@ struct stDynamicsReport;
 struct stDynamicsRotation;
 struct stDynamicsMovevement;
 struct stDynamicsParsingData;
-
 // COL
 struct stPhysicalCollideSet;
 struct stCollideElementIndexedTriangles;
 struct stCollideElementIndexedTrianglesVisual;
 struct stCollideMaterial; // defined in GMT under previous versions
-
 // GMT, GLI, GLD
 struct stGameMaterial;
 struct stVertex2DGLI;
 struct stCameraGLI;
 struct stTexture;
 struct stAnimatedTextureNode;
-
 // WP
 struct stWayPoint;
 struct stGraph;
@@ -142,7 +134,6 @@ struct vector {
     return x() == 0 && y() == 0 && z() == 0;
   }
   
-  //access
   inline auto x() -> T& { return data[0]; }
   inline auto y() -> T& { return data[1]; }
   inline auto z() -> T& { return data[2]; }
@@ -150,7 +141,7 @@ struct vector {
   inline auto xy() -> vector<2> { return vector<2>(x(), y()); }
   inline auto xyz() -> vector<3> { return vector<3>(x(), y(), z()); }
   inline auto& operator[](auto i) { return data[i]; }
-  //op
+  
   auto operator +(vector v) { vector result; for(auto i : range(N)) result[i] = data[i] + v[i]; return result; }
   auto operator -(vector v) { vector result; for(auto i : range(N)) result[i] = data[i] - v[i]; return result; }
   auto operator *(vector v) { vector result; for(auto i : range(N)) result[i] = data[i] * v[i]; return result; }
@@ -367,10 +358,7 @@ using stMatrix4D = matrix<4, 4, float32>;
   
 #pragma mark - Containers
 
-enum class LinkedListType {
-  Single,
-  Double,
-};
+enum class LinkedListType { Single, Double };
 
 /// A linked list
 template<typename T = uint32, enum LinkedListType K = LinkedListType::Single>
@@ -732,7 +720,7 @@ struct stEngineStructure {
   uint8 numSuperObjectsLoaded;
   uint8 numNonPersistentSOLinks;
   /// Padding
-  padding(9);
+  padding(9)
   ///
   doublepointer<> superObjectLinks;
   pointer<stGraphChainList> graphList;
