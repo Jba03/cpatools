@@ -86,9 +86,16 @@
 #include <vector>
 #include <string>
 #include <fstream>
+#include <filesystem>
+#include <functional>
 
 #include <any>
 #include <unordered_map>
+
+#ifdef WIN32
+# undef near
+# undef far
+#endif
 
 namespace cpa {
 
@@ -174,9 +181,9 @@ struct address {
   address() = default;
   static constexpr target_address_type zero = 0;
   
-//  address(intptr_t physicalAddress) {
-//    addr = reinterpret_cast<void*>(memory::bswap(physicalAddress));
-//  }
+  address(intptr_t physicalAddress) {
+    addr = reinterpret_cast<void*>(memory::bswap(physicalAddress));
+  }
   
   address(memory::target_address_type physicalAddress) {
     addr = memory::bswap(physicalAddress);
@@ -1599,7 +1606,7 @@ struct stAnim3D : structure {
   /// The list of events in this animation
   pointer<stEvent> eventList;
   pointer</*stMorphData*/> morphDataList;
-  ushort numGeneralA3D;
+  uint16 numGeneralA3D;
   /// The number of events in this animation
   uint8 numEvents;
   ///
@@ -4129,7 +4136,7 @@ struct stream {
   }
   
   stream(const std::filesystem::path path, mode m) : mode(m) {
-    name = path.filename();
+    name = path.filename().string();
     std::fstream fs(path, m == read ? std::ios::in : std::ios::out);
     if (!fs.is_open()) throw "failed to open stream @ " + path.string();
     fs.seekg(0, std::ios::end);
@@ -4302,7 +4309,7 @@ struct context {
     size_t sz = SIZE_MAX;
     void* data = fileRead(path, 0, sz);
     
-    stream = memory::stream(memory::stream::mode::read, data, sz);
+    //stream = memory::stream(memory::stream::mode::read, data, sz);
     
     uint32 indexCode = IndexCode;
     uint32 indexOffset = 0;
@@ -4489,7 +4496,7 @@ struct context {
   inline bool w() { return stream.mode == memory::stream::mode::write; }
   
 private:
-  memory::stream stream;
+  memory::stream stream = {};
   // Entries in this context
   std::map<cuuid, entry> entries;
   // The current working directory
@@ -4670,15 +4677,15 @@ static bool loadMemory(memory::host_address_type mem, memory::size_type size) {
   memory::size = size;
   
 #if game == R2_PC
-  g_stEngineStructure = pointer<stSuperObject>         (PTR_EngineStructure);
+  g_stEngineStructure = pointer<stEngineStructure>         (PTR_EngineStructure);
 //  g_stInputStructure  = pointer<IPT::stInputStructure> (PTR_InputStructure);
 //  g_stRandomStructure = pointer<RND::stRandom>         (PTR_RandomStructure);
 //  g_bGhostMode        = pointer<uint8>                 (PTR_GhostMode);
   
 //  p_stActualWorld          = *doublepointer<stSuperObject>(PTR_ActualWorld);
-  p_stDynamicWorld         = *doublepointer<stSuperObject>(PTR_DynamicWorld);
-  p_stInactiveDynamicWorld = *doublepointer<stSuperObject>(PTR_InactiveDynamicWorld);
-  p_stFatherSector         = *doublepointer<stSuperObject>(PTR_FatherSector);
+  //p_stDynamicWorld         = *doublepointer<stSuperObject>(PTR_DynamicWorld);
+  //p_stInactiveDynamicWorld = *doublepointer<stSuperObject>(PTR_InactiveDynamicWorld);
+  //p_stFatherSector         = *doublepointer<stSuperObject>(PTR_FatherSector);
 #endif
   
 #if game == R3_GCN
