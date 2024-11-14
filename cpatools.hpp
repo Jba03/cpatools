@@ -57,6 +57,12 @@
 # error Unknown version
 #endif
 
+// If nothing else is specified, assume the target
+// has the same configuration as the host machine.
+#ifndef CPA_TARGET_IS_HOST
+# define CPA_TARGET_IS_HOST   1
+#endif
+
 #define PLATFORM_IDENTIFIER_MASK  0x00FF
 #define PLATFORM_ENDIANNESS_MASK  0x0040
 #define ENGINE_VERSION_MASK       0xC000
@@ -121,7 +127,12 @@ static constexpr float EPSILON = 1e-6;
 namespace memory {
 using size_type = size_t;
 using host_address_type = void*;
+
+#if CPA_TARGET_IS_HOST
+using target_address_type = host_address_type;
+#else
 using target_address_type = uint32_t;
+#endif
 
 #if endianness == CPA_BIG_ENDIAN
 static constexpr std::endian _endianness = std::endian::big;
@@ -161,16 +172,22 @@ static inline auto memoryBound(memory::host_address_type addr) -> bool {
 /// An address type on the target platform
 struct address {
   address() = default;
-  static constexpr auto zero = 0;
+  static constexpr target_address_type zero = 0;
+  
+//  address(intptr_t physicalAddress) {
+//    addr = reinterpret_cast<void*>(memory::bswap(physicalAddress));
+//  }
   
   address(memory::target_address_type physicalAddress) {
     addr = memory::bswap(physicalAddress);
   }
   
+#if !CPA_TARGET_IS_HOST
   address(memory::host_address_type hostAddress) {
     intptr_t offset = intptr_t(hostAddress) - intptr_t(memory::baseAddress);
     addr = hostAddress ? memory::bswap(static_cast<memory::target_address_type>(offset)) : address::zero;
   }
+#endif
   
   /// Physical hardware address
   inline auto physicalAddress() -> memory::target_address_type {
@@ -608,6 +625,15 @@ struct stTexture;
 struct stAnimatedTextureNode; // todo
 struct stMaterial;
 struct stMultiTextureMaterial;
+struct stSpecificAttributesFor3D;
+struct stViewportManagement;
+}
+
+/// GLD
+namespace GLD {
+struct stViewportAttributes;
+using DeviceHandle = int16;
+using ViewportHandle = int16;
 }
 
 /// Waypoint module
@@ -1192,6 +1218,45 @@ struct stFamilyList : structure {
   int32 objectFamilyType;
 };
 
+#pragma mark - Forward
+
+struct GLD::stViewportAttributes: structure {
+  uint32 initialHeight;
+  uint32 initialWidth;
+  uint32 height;
+  uint32 width;
+  uint32 topInPix;
+  uint32 bottomInPix;
+  uint32 leftInPix;
+  uint32 rightInPix;
+  uint32 topInPixForClip;
+  uint32 bottomInPixForClip;
+  uint32 leftInPixForClip;
+  uint32 rightInPixForClip;
+  uint32 widthInPercent;
+  uint32 heightInPercent;
+  uint32 clipTopInPix;
+  uint32 clipBottomInPix;
+  uint32 clipLeftInPix;
+  uint32 clipRightInPix;
+  uint32 clipTopInPerMille;
+  uint32 clipBottomInPerMille;
+  uint32 clipLeftInPerMille;
+  uint32 clipRightInPerMille;
+  int32 offsetPosX;
+  int32 offsetPosY;
+  pointer<> virtualScreen;
+  int32 pitch;
+  pointer<> vSpecificToXD;
+  GLD::DeviceHandle deviceHandle;
+  GLD::ViewportHandle viewportHandle;
+};
+
+struct GLI::stSpecificAttributesFor3D: structure {
+  pointer<GLI::stCamera> camera;
+  float32 near;
+};
+
 #pragma mark - Engine
 
 /// High-resolution counter
@@ -1257,22 +1322,52 @@ struct stEngineStructure : structure {
   padding(3)
   uint32 displayMode;
   stEngineTimer timer;
+#if game == R3_GCN
   uint8 multimodePlayerCount;
   uint8 multimodeColumnCount;
   uint8 multimodeMiniScreenRatio;
   padding(1)
   pointer<stSuperObject> currentMainPlayers[4];
-  int16 gldDevice;
-  int16 gldViewport[5];
-  padding(5 * 28 * 4) /* viewport attributes */
-  pointer<GLI::stCamera> viewportCamera[5];
-  int16 gldFixViewport[5];
+#endif
+  
+  GLD::DeviceHandle deviceHandleGLD;
+  
+  // TODO: This can probably be shortened with std::conditional_t
+#if engine == R2
+  GLD::ViewportHandle viewportHandleGLD;
+  GLD::stViewportAttributes viewportAttributes;
+  pointer<GLI::stCamera> viewportCamera;
+  pointer<> drawSem;
+  GLD::ViewportHandle fixViewport;
   padding(2)
-  padding(5 * 28 * 4) /* fix viewport attributes */
-  padding(5 * 2 * 4) /* fix 3d attributes */
+  GLD::stViewportAttributes fixViewportAttributes;
+  GLI::stSpecificAttributesFor3D fixAttributes3D;
+  pointer<GLI::stCamera> fixCamera;
+#elif engine == R3
+  #define MAX_MULTIPLAYER_COUNT 5
+  GLD::ViewportHandle viewportHandle[5];
+  GLD::stViewportAttributes viewportAttributes[5];
+  pointer<GLI::stCamera> viewportCamera[5];
+  GLD::ViewportHandle fixViewport[5];
+  padding(2)
+  GLD::stViewportAttributes fixViewportAttributes[5];
+  GLI::stSpecificAttributesFor3D fixAttributes3D[5];
   pointer<GLI::stCamera> fixCamera[5];
-  padding(5 * 2 * 4) /* game 3d attributes */
-  pointer<> viewportArray;
+  GLI::stSpecificAttributesFor3D gameAttributes3D[5];
+#endif
+  
+  pointer<GLI::stViewportManagement> viewportArray;
+  
+#if engine == R2
+  stDoublyLinkedList<> cameraList;
+  stDoublyLinkedList<stFamilyList> familyList;
+  stDoublyLinkedList<> alwaysList;
+  pointer<stSuperObject> mainActor;
+  pointer<stSuperObject> nextMainActor;
+  pointer<stSuperObject> standardCamera;
+  pointer<> languageStructure;
+  pointer<> levelFilenameList;
+#elif engine == R3
   stDoublyLinkedList<> cameraList;
   pointer<> drawSem;
   stDoublyLinkedList<stFamilyList> familyList;
@@ -1282,13 +1377,15 @@ struct stEngineStructure : structure {
   pointer<stSuperObject> debugCamera;
   pointer<> languageStructure;
   pointer<> levelFilenameList;
+#endif
+  
   stTransform mainActorTransform;
   stTransform mainCameraTransform;
   int32 submapNumber;
   
-  uint8 paused;
-  uint8 paused2;
-  uint8 doGameSave;
+  uint8 isPaused;
+  uint8 wasPaused;
+  uint8 isSaving;
   
   /// List of level names
   string<30> levelNames[150];
@@ -2224,6 +2321,9 @@ struct COL::stZdxListEntry : structure {
   pointer<> parent;
   pointer<stCollideObject> data;
 #else
+  pointer<stZdxListEntry> next;
+  pointer<stZdxListEntry> prev;
+  pointer<> parent;
   pointer<stCollideObject> data;
 #endif
 };
@@ -2899,14 +2999,14 @@ struct AI::stAIModel : structure {
 };
 
 struct AI::stNodeInterpret : structure {
-#if platform == GCN
+//#if platform == GCN
   uint32 param;
   padding(3)
   uint8 type;
   padding(2)
   uint8 depth;
   padding(1)
-#endif
+//#endif
   using ParamType = decltype(param);
 };
 
@@ -3168,6 +3268,13 @@ struct GLI::stMaterial : structure {
   uint32 multiTextureType;
   uint32 numTextureStages;
   stMultiTextureMaterial multiTextureMaterial[4];
+};
+
+struct GLI::stViewportManagement: structure {
+  pointer<stSuperObject> cameraObject;
+  pointer<stSuperObject> cameraObjectTemp;
+  pointer<GLI::stCamera> camera;
+  uint8 valid;
 };
 
 #pragma mark - WP
@@ -3433,12 +3540,12 @@ auto stSuperObject::name(bool fullname) -> std::string {
     switch (type) {
       case Actor:
         return actor->name();
-      case IPO:
-        return fullname ? ipo->name : ipo->name.lastPathComponent();
-      case Sector:
-        return fullname ? sector->name : sector->name.lastPathComponent();
-      default:
-        return typeName();
+//      case IPO:
+//        return fullname ? ipo->name : ipo->name.lastPathComponent();
+//      case Sector:
+//        return fullname ? sector->name : sector->name.lastPathComponent();
+//      default:
+//        return typeName();
     }
   } catch (bad_pointer& e) {
     return "";
@@ -3632,376 +3739,376 @@ struct TranslationResult {
 
 struct TranslationEngine;
 
-struct TranslationContext {
-  TranslationContext(pointer<node> tree, std::function<void(TranslationContext&)> fn, TranslationEngine *e) : currentNode(tree), function(fn), _engine(e) {
-    /* ... */
-  }
-  
-  TranslationEngine *_engine;
-  
-  template <typename ... Args>
-  void emit(bool condition, Args ...args) {
-    if (condition) {
-      for (const auto v : { args... }) {
-        std::string str = v;
-        pointer<node> *targetNode = nullptr;
-        if (str.starts_with(":")) {
-          // *targetNode = currentNode;
-          str = str.substr(1, std::string::npos);
-        }
-        
-        
-        TranslationToken tok(str, std::string(v).starts_with(":") ? (node*)currentNode : nullptr);
-        tokens.push_back(tok);
-        
-        if (str == "\n") {
-          for (int i = 0; i < indentationLevel; i++) {
-            TranslationToken tok("  ", nullptr);
-            tokens.push_back(tok);
-          }
-        }
-      }
-    }
-  }
-  
-  void indent(bool condition, int off) {
-    if (condition) {
-      indentationLevel += off;
-    }
-  }
-  
-  uint32_t param() { return currentNode->param; }
-  operator uint32_t() { return currentNode->param; }
-  bool done() { return currentNode->type == nodetype::EndMacro || currentNode->depth == 0; }
-  
-  pointer<node> firstNode;
-  pointer<node> currentNode;
-  int indentationLevel = 0;
-  
-  void child(bool condition, int child = 0) {
-    if (condition) {
-      pointer<node> orig = currentNode;
-      pointer<node> node = currentNode + 1;
-      uint8_t min = currentNode->depth, occ = 0;
-      while (node->type != nodetype::EndMacro && node->depth > min) {
-        if (node->depth == min + 1 && occ++ == child) {
-          currentNode = node;
-          function(*this);
-          break;
-        }
-        node++;
-      }
-      currentNode = orig;
-    }
-  }
-  
-  void branch(bool args = false) {
-    pointer<node> orig = currentNode;
-    pointer<node> node = currentNode + 1;
-    uint8_t depth = currentNode->depth + 1, numArgs = 0;
-    while (node->type != nodetype::EndMacro && node->depth >= depth) {
-      if (node->depth == depth) {
-        currentNode = node;
-        function(*this);
-        
-        // Argument separator
-        if (args) {
-          numArgs++;
-          emit(true, ",", " ");
-        }
-      }
-      node++;
-    }
-    
-    if (numArgs >= 1) {
-      tokens.pop_back();
-      tokens.pop_back();
-    }
-    
-    currentNode = orig;
-  }
-  
-  bool isEnd(pointer<node> node) {
-    return node->type == EndMacro || node->depth == 0;
-  }
-  
-  void seekNextDepth() {
-    uint8_t depth = currentNode->depth;
-    if (isEnd(currentNode++))
-      return;
-    while (!isEnd(currentNode) && currentNode->depth != depth)
-      currentNode++;
-  }
-  
-  void translate() {
-    function(*this);
-  }
-  
-  std::vector<TranslationToken> tokens;
-  std::function<void(TranslationContext&)> function;
-  
-  std::vector<std::string> conditionTable;
-  std::vector<std::string> functionTable;
-  std::vector<std::string> procedureTable;
-  std::vector<std::string> fieldTable;
-  std::vector<std::string> metaActionTable;
-};
+//struct TranslationContext {
+//  TranslationContext(pointer<node> tree, std::function<void(TranslationContext&)> fn, TranslationEngine *e) : currentNode(tree), function(fn), _engine(e) {
+//    /* ... */
+//  }
+//
+//  TranslationEngine *_engine;
+//
+//  template <typename ... Args>
+//  void emit(bool condition, Args ...args) {
+//    if (condition) {
+//      for (const auto v : { args... }) {
+//        std::string str = v;
+//        pointer<node> *targetNode = nullptr;
+//        if (str.starts_with(":")) {
+//          // *targetNode = currentNode;
+//          str = str.substr(1, std::string::npos);
+//        }
+//
+//
+//        TranslationToken tok(str, std::string(v).starts_with(":") ? (node*)currentNode : nullptr);
+//        tokens.push_back(tok);
+//
+//        if (str == "\n") {
+//          for (int i = 0; i < indentationLevel; i++) {
+//            TranslationToken tok("  ", nullptr);
+//            tokens.push_back(tok);
+//          }
+//        }
+//      }
+//    }
+//  }
+//
+//  void indent(bool condition, int off) {
+//    if (condition) {
+//      indentationLevel += off;
+//    }
+//  }
+//
+//  uint32_t param() { return currentNode->param; }
+//  operator uint32_t() { return currentNode->param; }
+//  bool done() { return currentNode->type == nodetype::EndMacro || currentNode->depth == 0; }
+//
+//  pointer<node> firstNode;
+//  pointer<node> currentNode;
+//  int indentationLevel = 0;
+//
+//  void child(bool condition, int child = 0) {
+//    if (condition) {
+//      pointer<node> orig = currentNode;
+//      pointer<node> node = currentNode + 1;
+//      uint8_t min = currentNode->depth, occ = 0;
+//      while (node->type != nodetype::EndMacro && node->depth > min) {
+//        if (node->depth == min + 1 && occ++ == child) {
+//          currentNode = node;
+//          function(*this);
+//          break;
+//        }
+//        node++;
+//      }
+//      currentNode = orig;
+//    }
+//  }
+//
+//  void branch(bool args = false) {
+//    pointer<node> orig = currentNode;
+//    pointer<node> node = currentNode + 1;
+//    uint8_t depth = currentNode->depth + 1, numArgs = 0;
+//    while (node->type != nodetype::EndMacro && node->depth >= depth) {
+//      if (node->depth == depth) {
+//        currentNode = node;
+//        function(*this);
+//
+//        // Argument separator
+//        if (args) {
+//          numArgs++;
+//          emit(true, ",", " ");
+//        }
+//      }
+//      node++;
+//    }
+//
+//    if (numArgs >= 1) {
+//      tokens.pop_back();
+//      tokens.pop_back();
+//    }
+//
+//    currentNode = orig;
+//  }
+//
+//  bool isEnd(pointer<node> node) {
+//    return node->type == EndMacro || node->depth == 0;
+//  }
+//
+//  void seekNextDepth() {
+//    uint8_t depth = currentNode->depth;
+//    if (isEnd(currentNode++))
+//      return;
+//    while (!isEnd(currentNode) && currentNode->depth != depth)
+//      currentNode++;
+//  }
+//
+//  void translate() {
+//    function(*this);
+//  }
+//
+//  std::vector<TranslationToken> tokens;
+//  std::function<void(TranslationContext&)> function;
+//
+//  std::vector<std::string> conditionTable;
+//  std::vector<std::string> functionTable;
+//  std::vector<std::string> procedureTable;
+//  std::vector<std::string> fieldTable;
+//  std::vector<std::string> metaActionTable;
+//};
 
-static void keyword(TranslationContext& s) {
-  s.emit(s >= 0 && s <= 15, ":if", " ");
-  s.emit(s == 1 || s == 15, "!", "(");
-  s.emit(s == 14, "#debug");
-  s.emit(s == 15, "defined", "(", "U64", ")");
-  s.emit(s >= 2 && s <= 13, "framerule", " ", "%", " ", std::to_string(1 << (s.param() - 1)).c_str(), " ", s <= 7 ? "==" : "!=", " ", "0");
-  s.emit(s >= 2 && s <= 15, " ", "&&", " ");
-  s.child(s >= 0 && s <= 15);
-  //s.emit(s >= 0 && s <= 15, " ");
-  s.emit(s == 1 || s == 15, ")");
-  
-  s.emit(s == 17, ":else", " ");
-  s.emit(s == 16 || s == 17, "\n", "{");
-  s.indent(s == 16 || s == 17, +1);
-  s.emit(s == 16 || s == 17, "\n");
-  if (s == 16 || s == 17) s.branch();
-  if ((s == 16 || s == 17)) {
-    s.indent(s == 16 || s == 17, -1);
-    s.tokens.pop_back();
-  }
-  s.emit(s == 16 || s == 17, "}", "\n");
-  
-  s.emit(s == 19, "self");
-  s.emit(s == 20, "MainActor");
-}
-
-static void condition(TranslationContext& s) {
-  //printf("condition: %d %X\n", s.currentNode->type, (uint32_t)s.currentNode->param);
-  s.emit(s == 2, "!", "(");
-  s.child(s <= 9, 0);
-  s.emit(s != 2 && s <= 9, " ");
-  s.emit(s == 0, ":&&");
-  s.emit(s == 1, ":||");
-  s.emit(s == 3, ":^");
-  s.emit(s == 4, ":==");
-  s.emit(s == 5, ":!=");
-  s.emit(s == 6, ":<");
-  s.emit(s == 7, ":>");
-  s.emit(s == 8, ":<=");
-  s.emit(s == 9, ":>=");
-  s.emit(s != 2 && s <= 9, " ");
-  s.emit(s >= 10, std::string(":" + s.conditionTable[s.param()]).c_str(), "(");
-  s <= 9 ? s.child(true, 1) : s.branch(true);
-  s.emit(s == 2 || s >= 10, ")");
-  //s.emit(true, " ");
-}
-
-static void _operator(TranslationContext& s) {
-  s.emit(s == 4 || s == 19, "-");
-  s.emit(s <= 4 || (s >= 17 && s <= 21 && s != 19), "(");
-  s.emit(s == 26, "(");
-  s.child(s <= 27, 0);
-  s.emit(s == 0, " ", ":+", " ");
-  s.emit(s == 1, " ", ":-", " ");
-  s.emit(s == 2, " ", ":*", " ");
-  s.emit(s == 3, " ", ":/", " ");
-  s.emit(s == 5, " ", ":%%", " ");
-  s.emit(s == 6, " ", ":+=", " ");
-  s.emit(s == 7, " ", ":-=", " ");
-  s.emit(s == 8, " ", ":*=", " ");
-  s.emit(s == 9, " ", ":/=", " ");
-  s.emit(s == 10, ":++", ";", "\n");
-  s.emit(s == 11, ":--", ";", "\n");
-  s.emit(s == 12, " ", ":=", " ");
-  s.emit(s == 13, ":.");
-  s.emit(s == 14, ".", ":X"); // vector x
-  s.emit(s == 15, ".", ":Y"); // vector y
-  s.emit(s == 16, ".", ":Z"); // vector z
-  s.emit(s == 17, " ", ":+", " "); // vector + vector
-  s.emit(s == 18, " ", ":-", " "); // vector - vector
-  s.emit(s == 20, " ", ":*", " "); // vector * scalar
-  s.emit(s == 21, " ", ":/", " "); // vector / scalar
-  s.emit(s == 22, ".", ":X", " ", "="); // vector.x = s
-  s.emit(s == 23, ".", ":Y", " ", "="); // vector.x = s
-  s.emit(s == 24, ".", ":Z", " ", "="); // vector.x = s
-  s.emit(s == 25, "."); // 'ultra'
-  s.emit(s == 26, ")", "("); // modelcast
-  s.emit(s == 27, "["); // array access
-  
-  s.child(s <= 27 && s != 4 && s != 10 && s != 11 && !(s >= 14 && s <= 16) && s != 19, 1);
-  s.emit(s == 26, ")", ")"); // modelcast
-  s.emit(s == 27, "]"); // array access
-  s.emit(s <= 4 || (s >= 17 && s <= 21 && s != 19), ")");
-  s.emit(s == 12 || (s >= 6 && s <= 9) || (s >= 22 && s <= 23), ";", "\n");
-}
-
-static void function(TranslationContext& s) {
-  s.emit(true, std::string(":" + s.functionTable[s.param()]).c_str(), "(");
-  s.branch(true);
-  s.emit(true, ")");
-}
-
-static void procedure(TranslationContext& s) {
-  s.emit(true, std::string(":" + s.procedureTable[s.param()]).c_str(), "(");
-  s.branch(true);
-  s.emit(true, ")", ";", "\n");
-}
-
-static void metaAction(TranslationContext& s) {
-  s.emit(true, std::string(":" + s.metaActionTable[s.param()]).c_str(), "(");
-  s.branch(true);
-  s.emit(true, ")", ";", "\n");
-}
-
-static void field(TranslationContext& s) {
-  s.emit(true, (":" + s.fieldTable[s.param()]).c_str());
-}
-
-static void dsgvar(TranslationContext& s) {
-  s.emit(true, (std::string(":DsgVar_") + std::to_string(s.param())).c_str());
-}
-
-static void constant(TranslationContext& s) {
-  s.emit(true, (":" + std::to_string((int32_t)s.param())).c_str());
-}
-
-static void real(TranslationContext& s) {
-  uint32_t p = s.param();
-  char buf[64];
-  std::sprintf(buf, ":%.5gf", *(float*)&p);
-  
-  s.emit(true, std::string(buf).c_str());
-}
-
-static void vector(TranslationContext& s) {
-  s.emit(true, ":Vector", "(");
-  s.branch(true);
-  s.emit(true, ")");
-}
-
-static void button(TranslationContext& s) {
-  // s.emit(true, "", )
-}
-
-static void _string(TranslationContext& s) {
-  const char *str = pointer<string<>>(s.param());
-  s.emit(true, "\"", (":" + std::string(str)).c_str(), "\"");
-}
-
-static void reference(TranslationContext& s) {
-  s.emit(true, ":" + std::to_string(s.param()));
-}
-
-static void subroutine(TranslationContext& s) {
-  //  if (s.engine->options.expandMacroReferences) {
-  //    pointer<structure::stMacro> macro = pointer<structure::stMacro>(s.param());
-  //    TranslationEngine t(s.engine->options);
-  //    TranslationResult *result = t.translate(nullptr, macro->currentTree->node);
-  //
-  //    for (TranslationToken& tok : result->tokens) {
-  //      s.tokens.push_back(tok);
-  //    }
-  //  } else {
-  s.emit(true, std::string(":" + std::to_string(s.param())).c_str(), "(", ")", ";", "\n");
-  // }
-}
-
-static void null(TranslationContext& s) {
-  s.emit(true, ":NULL");
-}
-
-static std::map<int, std::function<void(TranslationContext& s)>> TranslationTable {
-  { nodetype::Keyword, &keyword },
-  { nodetype::Condition, &condition },
-  { nodetype::Operator, &_operator },
-  { nodetype::Function, &function },
-  { nodetype::Procedure, &procedure },
-  { nodetype::MetaAction, &metaAction },
-  { nodetype::BeginMacro, nullptr },
-  { nodetype::BeginMacro2, nullptr },
-  { nodetype::EndMacro, nullptr },
-  { nodetype::Field, &field },
-  { nodetype::DsgVarRef, &dsgvar },
-  { nodetype::DsgVarRef2, &dsgvar },
-  { nodetype::Constant, &constant },
-  { nodetype::Real, &real },
-  { nodetype::Button, nullptr },
-  { nodetype::ConstantVector, &vector },
-  { nodetype::Vector, &vector },
-  { nodetype::Mask, nullptr },
-  { nodetype::ModuleRef, nullptr },
-  { nodetype::DsgVarID, nullptr },
-  { nodetype::String, &_string },
-  { nodetype::LipsSynchroRef, &reference },
-  { nodetype::FamilyRef, &reference },
-  { nodetype::ActorRef, &reference},
-  { nodetype::ActionRef, &reference },
-  { nodetype::SuperObjectRef, &reference },
-  { nodetype::SOLinksRef, &reference },
-  { nodetype::WaypointRef, &reference },
-  { nodetype::TextRef, &reference },
-  { nodetype::BehaviorRef, &reference },
-  { nodetype::ModuleRef2, &reference },
-  { nodetype::SoundEventRef, &reference },
-  { nodetype::ObjectTableRef, &reference },
-  { nodetype::GameMaterialRef, &reference },
-  { nodetype::VisualMaterial, nullptr },
-  { nodetype::ParticleGenerator, nullptr },
-  { nodetype::ModelRef, nullptr },
-  { nodetype::ModelRef2, nullptr },
-  { nodetype::CustomBits, nullptr },
-  { nodetype::Caps, nullptr },
-  { nodetype::Graph, nullptr },
-  { nodetype::Subroutine, &subroutine },
-  { nodetype::Null, &null },
-  { nodetype::CineRef, nullptr },
-  { nodetype::GraphRef, nullptr },
-};
-
-static void NodeTranslate(TranslationContext& s) {
-  //printf("node: %d %d %d\n", s.currentNode->type, (uint32_t)s.currentNode->param, s.currentNode->depth);
-  pointer<node> node = s.currentNode;
-  if (TranslationTable.find(node->type) != TranslationTable.end()) {
-    if (TranslationTable[node->type] != nullptr)
-      TranslationTable[node->type](s);
-  }
-  s.seekNextDepth();
-}
-
-/// Context for script translation
-struct TranslationEngine {
-  
-  TranslationEngine(TranslationOptions opt) : options(opt) {
-    /* ... */
-  }
-  
-  TranslationResult *translate(pointer<stSuperObject> actor, pointer<node> tree) {
-    initialNode = tree;
-    TranslationContext s(tree, NodeTranslate, this);
-    s.conditionTable = options.conditionTable;
-    s.functionTable = options.functionTable;
-    s.procedureTable = options.procedureTable;
-    s.metaActionTable = options.metaActionTable;
-    s.fieldTable = options.fieldTable;
-    
-    while (!s.done())
-      s.translate();
-    
-    TranslationResult *result = new TranslationResult(TranslationMode::TreeToSource);
-    result->tokens = s.tokens;
-    return result;
-  }
-  
-  TranslationResult *translate(pointer<stSuperObject> actor, std::string source) {
-    TranslationResult *result = new TranslationResult(TranslationMode::SourceToTree);
-    return result;
-  }
-  
-  
-  TranslationOptions options;
-  
-  TranslationMode mode;
-  pointer<node> initialNode;
-  pointer<node> currentNode;
-};
+//static void keyword(TranslationContext& s) {
+//  s.emit(s >= 0 && s <= 15, ":if", " ");
+//  s.emit(s == 1 || s == 15, "!", "(");
+//  s.emit(s == 14, "#debug");
+//  s.emit(s == 15, "defined", "(", "U64", ")");
+//  s.emit(s >= 2 && s <= 13, "framerule", " ", "%", " ", std::to_string(1 << (s.param() - 1)).c_str(), " ", s <= 7 ? "==" : "!=", " ", "0");
+//  s.emit(s >= 2 && s <= 15, " ", "&&", " ");
+//  s.child(s >= 0 && s <= 15);
+//  //s.emit(s >= 0 && s <= 15, " ");
+//  s.emit(s == 1 || s == 15, ")");
+//
+//  s.emit(s == 17, ":else", " ");
+//  s.emit(s == 16 || s == 17, "\n", "{");
+//  s.indent(s == 16 || s == 17, +1);
+//  s.emit(s == 16 || s == 17, "\n");
+//  if (s == 16 || s == 17) s.branch();
+//  if ((s == 16 || s == 17)) {
+//    s.indent(s == 16 || s == 17, -1);
+//    s.tokens.pop_back();
+//  }
+//  s.emit(s == 16 || s == 17, "}", "\n");
+//
+//  s.emit(s == 19, "self");
+//  s.emit(s == 20, "MainActor");
+//}
+//
+//static void condition(TranslationContext& s) {
+//  //printf("condition: %d %X\n", s.currentNode->type, (uint32_t)s.currentNode->param);
+//  s.emit(s == 2, "!", "(");
+//  s.child(s <= 9, 0);
+//  s.emit(s != 2 && s <= 9, " ");
+//  s.emit(s == 0, ":&&");
+//  s.emit(s == 1, ":||");
+//  s.emit(s == 3, ":^");
+//  s.emit(s == 4, ":==");
+//  s.emit(s == 5, ":!=");
+//  s.emit(s == 6, ":<");
+//  s.emit(s == 7, ":>");
+//  s.emit(s == 8, ":<=");
+//  s.emit(s == 9, ":>=");
+//  s.emit(s != 2 && s <= 9, " ");
+//  s.emit(s >= 10, std::string(":" + s.conditionTable[s.param()]).c_str(), "(");
+//  s <= 9 ? s.child(true, 1) : s.branch(true);
+//  s.emit(s == 2 || s >= 10, ")");
+//  //s.emit(true, " ");
+//}
+//
+//static void _operator(TranslationContext& s) {
+//  s.emit(s == 4 || s == 19, "-");
+//  s.emit(s <= 4 || (s >= 17 && s <= 21 && s != 19), "(");
+//  s.emit(s == 26, "(");
+//  s.child(s <= 27, 0);
+//  s.emit(s == 0, " ", ":+", " ");
+//  s.emit(s == 1, " ", ":-", " ");
+//  s.emit(s == 2, " ", ":*", " ");
+//  s.emit(s == 3, " ", ":/", " ");
+//  s.emit(s == 5, " ", ":%%", " ");
+//  s.emit(s == 6, " ", ":+=", " ");
+//  s.emit(s == 7, " ", ":-=", " ");
+//  s.emit(s == 8, " ", ":*=", " ");
+//  s.emit(s == 9, " ", ":/=", " ");
+//  s.emit(s == 10, ":++", ";", "\n");
+//  s.emit(s == 11, ":--", ";", "\n");
+//  s.emit(s == 12, " ", ":=", " ");
+//  s.emit(s == 13, ":.");
+//  s.emit(s == 14, ".", ":X"); // vector x
+//  s.emit(s == 15, ".", ":Y"); // vector y
+//  s.emit(s == 16, ".", ":Z"); // vector z
+//  s.emit(s == 17, " ", ":+", " "); // vector + vector
+//  s.emit(s == 18, " ", ":-", " "); // vector - vector
+//  s.emit(s == 20, " ", ":*", " "); // vector * scalar
+//  s.emit(s == 21, " ", ":/", " "); // vector / scalar
+//  s.emit(s == 22, ".", ":X", " ", "="); // vector.x = s
+//  s.emit(s == 23, ".", ":Y", " ", "="); // vector.x = s
+//  s.emit(s == 24, ".", ":Z", " ", "="); // vector.x = s
+//  s.emit(s == 25, "."); // 'ultra'
+//  s.emit(s == 26, ")", "("); // modelcast
+//  s.emit(s == 27, "["); // array access
+//
+//  s.child(s <= 27 && s != 4 && s != 10 && s != 11 && !(s >= 14 && s <= 16) && s != 19, 1);
+//  s.emit(s == 26, ")", ")"); // modelcast
+//  s.emit(s == 27, "]"); // array access
+//  s.emit(s <= 4 || (s >= 17 && s <= 21 && s != 19), ")");
+//  s.emit(s == 12 || (s >= 6 && s <= 9) || (s >= 22 && s <= 23), ";", "\n");
+//}
+//
+//static void function(TranslationContext& s) {
+//  s.emit(true, std::string(":" + s.functionTable[s.param()]).c_str(), "(");
+//  s.branch(true);
+//  s.emit(true, ")");
+//}
+//
+//static void procedure(TranslationContext& s) {
+//  s.emit(true, std::string(":" + s.procedureTable[s.param()]).c_str(), "(");
+//  s.branch(true);
+//  s.emit(true, ")", ";", "\n");
+//}
+//
+//static void metaAction(TranslationContext& s) {
+//  s.emit(true, std::string(":" + s.metaActionTable[s.param()]).c_str(), "(");
+//  s.branch(true);
+//  s.emit(true, ")", ";", "\n");
+//}
+//
+//static void field(TranslationContext& s) {
+//  s.emit(true, (":" + s.fieldTable[s.param()]).c_str());
+//}
+//
+//static void dsgvar(TranslationContext& s) {
+//  s.emit(true, (std::string(":DsgVar_") + std::to_string(s.param())).c_str());
+//}
+//
+//static void constant(TranslationContext& s) {
+//  s.emit(true, (":" + std::to_string((int32_t)s.param())).c_str());
+//}
+//
+//static void real(TranslationContext& s) {
+//  uint32_t p = s.param();
+//  char buf[64];
+//  std::sprintf(buf, ":%.5gf", *(float*)&p);
+//
+//  s.emit(true, std::string(buf).c_str());
+//}
+//
+//static void vector(TranslationContext& s) {
+//  s.emit(true, ":Vector", "(");
+//  s.branch(true);
+//  s.emit(true, ")");
+//}
+//
+//static void button(TranslationContext& s) {
+//  // s.emit(true, "", )
+//}
+//
+//static void _string(TranslationContext& s) {
+//  const char *str = pointer<string<>>(s.param());
+//  s.emit(true, "\"", (":" + std::string(str)).c_str(), "\"");
+//}
+//
+//static void reference(TranslationContext& s) {
+//  s.emit(true, ":" + std::to_string(s.param()));
+//}
+//
+//static void subroutine(TranslationContext& s) {
+//  //  if (s.engine->options.expandMacroReferences) {
+//  //    pointer<structure::stMacro> macro = pointer<structure::stMacro>(s.param());
+//  //    TranslationEngine t(s.engine->options);
+//  //    TranslationResult *result = t.translate(nullptr, macro->currentTree->node);
+//  //
+//  //    for (TranslationToken& tok : result->tokens) {
+//  //      s.tokens.push_back(tok);
+//  //    }
+//  //  } else {
+//  s.emit(true, std::string(":" + std::to_string(s.param())).c_str(), "(", ")", ";", "\n");
+//  // }
+//}
+//
+//static void null(TranslationContext& s) {
+//  s.emit(true, ":NULL");
+//}
+//
+//static std::map<int, std::function<void(TranslationContext& s)>> TranslationTable {
+//  { nodetype::Keyword, &keyword },
+//  { nodetype::Condition, &condition },
+//  { nodetype::Operator, &_operator },
+//  { nodetype::Function, &function },
+//  { nodetype::Procedure, &procedure },
+//  { nodetype::MetaAction, &metaAction },
+//  { nodetype::BeginMacro, nullptr },
+//  { nodetype::BeginMacro2, nullptr },
+//  { nodetype::EndMacro, nullptr },
+//  { nodetype::Field, &field },
+//  { nodetype::DsgVarRef, &dsgvar },
+//  { nodetype::DsgVarRef2, &dsgvar },
+//  { nodetype::Constant, &constant },
+//  { nodetype::Real, &real },
+//  { nodetype::Button, nullptr },
+//  { nodetype::ConstantVector, &vector },
+//  { nodetype::Vector, &vector },
+//  { nodetype::Mask, nullptr },
+//  { nodetype::ModuleRef, nullptr },
+//  { nodetype::DsgVarID, nullptr },
+//  { nodetype::String, &_string },
+//  { nodetype::LipsSynchroRef, &reference },
+//  { nodetype::FamilyRef, &reference },
+//  { nodetype::ActorRef, &reference},
+//  { nodetype::ActionRef, &reference },
+//  { nodetype::SuperObjectRef, &reference },
+//  { nodetype::SOLinksRef, &reference },
+//  { nodetype::WaypointRef, &reference },
+//  { nodetype::TextRef, &reference },
+//  { nodetype::BehaviorRef, &reference },
+//  { nodetype::ModuleRef2, &reference },
+//  { nodetype::SoundEventRef, &reference },
+//  { nodetype::ObjectTableRef, &reference },
+//  { nodetype::GameMaterialRef, &reference },
+//  { nodetype::VisualMaterial, nullptr },
+//  { nodetype::ParticleGenerator, nullptr },
+//  { nodetype::ModelRef, nullptr },
+//  { nodetype::ModelRef2, nullptr },
+//  { nodetype::CustomBits, nullptr },
+//  { nodetype::Caps, nullptr },
+//  { nodetype::Graph, nullptr },
+//  { nodetype::Subroutine, &subroutine },
+//  { nodetype::Null, &null },
+//  { nodetype::CineRef, nullptr },
+//  { nodetype::GraphRef, nullptr },
+//};
+//
+//static void NodeTranslate(TranslationContext& s) {
+//  //printf("node: %d %d %d\n", s.currentNode->type, (uint32_t)s.currentNode->param, s.currentNode->depth);
+//  pointer<node> node = s.currentNode;
+//  if (TranslationTable.find(node->type) != TranslationTable.end()) {
+//    if (TranslationTable[node->type] != nullptr)
+//      TranslationTable[node->type](s);
+//  }
+//  s.seekNextDepth();
+//}
+//
+///// Context for script translation
+//struct TranslationEngine {
+//
+//  TranslationEngine(TranslationOptions opt) : options(opt) {
+//    /* ... */
+//  }
+//
+//  TranslationResult *translate(pointer<stSuperObject> actor, pointer<node> tree) {
+//    initialNode = tree;
+//    TranslationContext s(tree, NodeTranslate, this);
+//    s.conditionTable = options.conditionTable;
+//    s.functionTable = options.functionTable;
+//    s.procedureTable = options.procedureTable;
+//    s.metaActionTable = options.metaActionTable;
+//    s.fieldTable = options.fieldTable;
+//
+//    while (!s.done())
+//      s.translate();
+//
+//    TranslationResult *result = new TranslationResult(TranslationMode::TreeToSource);
+//    result->tokens = s.tokens;
+//    return result;
+//  }
+//
+//  TranslationResult *translate(pointer<stSuperObject> actor, std::string source) {
+//    TranslationResult *result = new TranslationResult(TranslationMode::SourceToTree);
+//    return result;
+//  }
+//
+//
+//  TranslationOptions options;
+//
+//  TranslationMode mode;
+//  pointer<node> initialNode;
+//  pointer<node> currentNode;
+//};
 
 }; /* script */
 
@@ -4449,24 +4556,28 @@ private:
 
 #pragma mark - Pointer constants -
 
-#if platform == GCN
-# define PTR_EngineStructure        0x803E7C0C // struct
-# define PTR_InputStructure         0x8042F5A8 // struct
-# define PTR_FixMemory              0x804334CC
-# define PTR_LevelMemory            0x804334D0
-# define PTR_RandomStructure        0x80436924 // struct
-# define PTR_GhostMode              0x805D8580 // byte
-# define PTR_InactiveDynamicWorld   0x805D8594 // dptr
-# define PTR_FatherSector           0x805D8598 // dptr
-# define PTR_DynamicWorld           0x805D859C // dptr
-# define PTR_ActualWorld            0x805D85A0 // dptr
-// these are probably part of some structure
-# define PTR_MenuSelectionV         0x805D884C
-# define PTR_MenuOptionRumble       0x805D89B0
-
-# define PTR_MechanicsObstacleArray 0x805D73F8
-# define PTR_CollisionGV            0x803DC4F4
-# define PTR_GLI_BitmapBuffer       0x80EEFAE8 // dptr
+#if game == R3_GCN
+#   define PTR_EngineStructure        0x803E7C0C // struct
+#   define PTR_InputStructure         0x8042F5A8 // struct
+#   define PTR_FixMemory              0x804334CC
+#   define PTR_LevelMemory            0x804334D0
+#   define PTR_RandomStructure        0x80436924 // struct
+#   define PTR_GhostMode              0x805D8580 // byte
+#   define PTR_InactiveDynamicWorld   0x805D8594 // dptr
+#   define PTR_FatherSector           0x805D8598 // dptr
+#   define PTR_DynamicWorld           0x805D859C // dptr
+#   define PTR_ActualWorld            0x805D85A0 // dptr
+#   define PTR_MenuSelectionV         0x805D884C
+#   define PTR_MenuOptionRumble       0x805D89B0
+#   define PTR_MechanicsObstacleArray 0x805D73F8
+#   define PTR_CollisionGV            0x803DC4F4
+#   define PTR_GLI_BitmapBuffer       0x80EEFAE8 // dptr
+#elif game == R2_PC
+#   define PTR_EngineStructure  0x500380
+#   define PTR_InactiveDynamicWorld   0x500FC4 // dptr
+#   define PTR_FatherSector           0x500FC0 // dptr
+#   define PTR_DynamicWorld           0x500FD0 // dptr
+//#   define PTR_ActualWorld            0x805D85A0 // dptr
 #endif
 
 #pragma mark - Globals -
@@ -4558,6 +4669,19 @@ static bool loadMemory(memory::host_address_type mem, memory::size_type size) {
   memory::baseAddress = mem;
   memory::size = size;
   
+#if game == R2_PC
+  g_stEngineStructure = pointer<stSuperObject>         (PTR_EngineStructure);
+//  g_stInputStructure  = pointer<IPT::stInputStructure> (PTR_InputStructure);
+//  g_stRandomStructure = pointer<RND::stRandom>         (PTR_RandomStructure);
+//  g_bGhostMode        = pointer<uint8>                 (PTR_GhostMode);
+  
+//  p_stActualWorld          = *doublepointer<stSuperObject>(PTR_ActualWorld);
+  p_stDynamicWorld         = *doublepointer<stSuperObject>(PTR_DynamicWorld);
+  p_stInactiveDynamicWorld = *doublepointer<stSuperObject>(PTR_InactiveDynamicWorld);
+  p_stFatherSector         = *doublepointer<stSuperObject>(PTR_FatherSector);
+#endif
+  
+#if game == R3_GCN
   g_stEngineStructure = pointer<stSuperObject>         (PTR_EngineStructure);
   g_stInputStructure  = pointer<IPT::stInputStructure> (PTR_InputStructure);
   g_stRandomStructure = pointer<RND::stRandom>         (PTR_RandomStructure);
@@ -4600,6 +4724,7 @@ static bool loadMemory(memory::host_address_type mem, memory::size_type size) {
 
     cacheObjectTypes();
   }
+#endif
   
   return true;
 }
