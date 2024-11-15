@@ -80,6 +80,7 @@
 #include <vector>
 #include <string>
 #include <fstream>
+#include <limits>
 
 #include <any>
 #include <unordered_map>
@@ -131,6 +132,16 @@ static constexpr std::endian _endianness = std::endian::little;
 # error Unknown endianness
 #endif
 
+#if game == R3_GCN
+static constexpr auto PhysicalMemoryMask = 0x80000000;
+static constexpr auto EffectiveMemoryMask = 0x7FFFFFFF;
+#else
+static constexpr auto PhysicalMemoryMask = std::numeric_limits<target_address_type>::min();
+static constexpr auto EffectiveMemoryMask = std::numeric_limits<target_address_type>::max();
+static_assert(PhysicalMemoryMask == 0, "Expected unsigned address type");
+#endif
+
+
 /// The base address of the engine
 CPA_EXTERN host_address_type baseAddress;
 /// Size of the memory space
@@ -173,21 +184,13 @@ struct address {
   }
   
   /// Physical hardware address
-  inline memory::target_address_type physicalAddress() {
-#if platform == GCN
-    return memory::bswap(addr) | 0x80000000;
-#else
-    return memory::bswap(addr);
-#endif
+  inline memory::target_address_type physicalAddress() const {
+    return memory::bswap(addr) | PhysicalMemoryMask;
   }
   
   /// Effective (emulated) address
   inline memory::target_address_type effectiveAddress() const {
-#if platform == GCN
-    return memory::bswap(addr) & 0x7FFFFFFF;
-#else
-    return memory::bswap(addr);
-#endif
+    return memory::bswap(addr) & EffectiveMemoryMask;
   }
   
   /// Host platform address
