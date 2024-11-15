@@ -3,6 +3,7 @@ It aims to provide a complete, documented interface of the engine, as well as ad
 
 ```cpp
 // Implementing the static interface.
+// If building for emulator, define CPA_TARGET_EMULATOR here.
 #define CPATOOLS_IMPLEMENTATION
 #include <cpatools/cpatools.hpp>
 using namespace cpa;
