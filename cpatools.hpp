@@ -80,6 +80,7 @@
 #include <vector>
 #include <string>
 #include <fstream>
+#include <limits>
 
 #include <any>
 #include <unordered_map>
@@ -88,25 +89,25 @@ namespace cpa {
 
 struct _range {
   struct iterator {
-    iterator(int64_t position, int64_t step = 0) : position(position), step(step) {}
-    auto operator*() const -> int64_t { return position; }
-    auto operator!=(const iterator& source) const -> bool { return step > 0 ? position < source.position : position > source.position; }
-    auto operator++() -> iterator& { position += step; return *this; }
+    constexpr iterator(int64_t position, int64_t step = 0) : position(position), step(step) {}
+    constexpr auto operator*() const -> int64_t { return position; }
+    constexpr auto operator!=(const iterator& source) const -> bool { return step > 0 ? position < source.position : position > source.position; }
+    constexpr auto operator++() -> iterator& { position += step; return *this; }
     
   private:
     int64_t position;
     const int64_t step;
   };
   
-  auto begin() const -> iterator { return {origin, stride}; }
-  auto end() const -> iterator { return {target}; }
+  constexpr auto begin() const -> iterator { return {origin, stride}; }
+  constexpr auto end() const -> iterator { return {target}; }
   
   int64_t origin;
   int64_t target;
   int64_t stride;
 };
 
-static inline auto range(int64_t sz) {
+static constexpr inline auto range(int64_t sz) {
   return _range { 0, sz, 1 };
 }
 
@@ -131,6 +132,16 @@ static constexpr std::endian _endianness = std::endian::little;
 # error Unknown endianness
 #endif
 
+#if defined(CPA_TARGET_EMULATOR) && (platform == GCN)
+static constexpr auto PhysicalAddressingMask = 0x80000000;
+static constexpr auto EffectiveAddressingMask = 0x7FFFFFFF;
+#else
+static constexpr auto PhysicalAddressingMask = std::numeric_limits<target_address_type>::min();
+static constexpr auto EffectiveAddressingMask = std::numeric_limits<target_address_type>::max();
+static_assert(PhysicalAddressingMask == 0, "Expected unsigned address type");
+#endif
+
+
 /// The base address of the engine
 CPA_EXTERN host_address_type baseAddress;
 /// Size of the memory space
@@ -138,9 +149,9 @@ CPA_EXTERN size_type size;
 /// Flags: CPA_MEMORY_...
 CPA_EXTERN unsigned flags;
 
-static inline auto bswap16(uint16_t value) -> uint16_t { return value << 8 | value >> 8; }
-static inline auto bswap32(uint32_t value) -> uint32_t { return (uint32_t)bswap16(value) << 16 | bswap16(value >> 16); }
-static inline auto bswap64(uint64_t value) -> uint64_t { return (uint64_t)bswap32(value) << 32 | bswap32(value >> 32); }
+static inline uint16_t bswap16(uint16_t value) { return value << 8 | value >> 8; }
+static inline uint32_t bswap32(uint32_t value) { return (uint32_t)bswap16(value) << 16 | bswap16(value >> 16); }
+static inline uint64_t bswap64(uint64_t value) { return (uint64_t)bswap32(value) << 32 | bswap32(value >> 32); }
 
 template<typename T> static inline T constexpr bswap(const T v) {
   if constexpr (_endianness != std::endian::native && std::is_integral<T>::value) {
@@ -154,14 +165,14 @@ template<typename T> static inline T constexpr bswap(const T v) {
 }
 
 /// Returns true if the specified address is within the memory range
-static inline auto memoryBound(memory::host_address_type addr) -> bool {
+static inline bool memoryBound(memory::host_address_type addr) {
   return intptr_t(addr) >= intptr_t(baseAddress) && intptr_t(addr) <= intptr_t(baseAddress) + size;
 }
 
 /// An address type on the target platform
 struct address {
   address() = default;
-  static constexpr auto zero = 0;
+  static constexpr memory::target_address_type zero = 0;
   
   address(memory::target_address_type physicalAddress) {
     addr = memory::bswap(physicalAddress);
@@ -173,31 +184,23 @@ struct address {
   }
   
   /// Physical hardware address
-  inline auto physicalAddress() -> memory::target_address_type {
-#if platform == GCN
-    return memory::bswap(addr) | 0x80000000;
-#else
-    return memory::bswap(addr);
-#endif
+  inline memory::target_address_type physicalAddress() const {
+    return memory::bswap(addr) | PhysicalAddressingMask;
   }
   
   /// Effective (emulated) address
-  inline auto effectiveAddress() -> memory::target_address_type {
-#if platform == GCN
-    return memory::bswap(addr) & 0x7FFFFFFF;
-#else
-    return memory::bswap(addr);
-#endif
+  inline memory::target_address_type effectiveAddress() const {
+    return memory::bswap(addr) & EffectiveAddressingMask;
   }
   
   /// Host platform address
-  inline auto hostAddress() -> memory::host_address_type {
+  inline memory::host_address_type hostAddress() const {
     intptr_t offset = intptr_t(memory::baseAddress) + intptr_t(effectiveAddress());
     return valid() ? memory::host_address_type(offset) : nullptr;
   }
   
   /// Is the address non-zero?
-  inline auto valid() -> bool {
+  inline bool valid() const {
     return effectiveAddress() != address::zero;
   }
   
@@ -205,7 +208,7 @@ struct address {
     return valid();
   }
   
-  inline auto operator==(address other) -> bool {
+  inline bool operator==(address other) {
     return effectiveAddress() == other.effectiveAddress();
   }
   
@@ -245,21 +248,21 @@ struct type {
   }
   
   /// Return the offset of this type in target memory
-  inline auto memoryOffset() -> address { return &data; }
+  inline address memoryOffset() { return &data; }
   /// Is the type bound to the address space of the target?
-  inline auto memoryBound() -> bool { return memory::memoryBound(&data); }
+  inline bool memoryBound() { return memory::memoryBound(&data); }
   /// Is the memory of the type writable?
-  inline auto writable() -> bool { return !memoryBound() ? true : !(memory::flags & CPA_MEMORY_READONLY); }
+  inline bool writable() { return !memoryBound() ? true : !(memory::flags & CPA_MEMORY_READONLY); }
   
-  inline auto operator+(std::integral auto value) -> T1 { return T1(data) + T1(value); }
-  inline auto operator-(std::integral auto value) -> T1 { return T1(data) - T1(value); }
-  inline auto operator*(std::integral auto value) -> T1 { return T1(data) * T1(value); }
-  inline auto operator/(std::integral auto value) -> T1 { return T1(data) / T1(value); }
+  inline T1 operator+(std::integral auto value) { return T1(data) + T1(value); }
+  inline T1 operator-(std::integral auto value) { return T1(data) - T1(value); }
+  inline T1 operator*(std::integral auto value) { return T1(data) * T1(value); }
+  inline T1 operator/(std::integral auto value) { return T1(data) / T1(value); }
   
-  inline auto operator+=(T1 other) -> T1 { return *this = *this + other;  }
-  inline auto operator-=(T1 other) -> T1 { return *this = *this - other;  }
-  inline auto operator*=(T1 other) -> T1 { return *this = *this * other;  }
-  inline auto operator/=(T1 other) -> T1 { return *this = *this / other;  }
+  inline T1 operator+=(T1 other) { return *this = *this + other;  }
+  inline T1 operator-=(T1 other) { return *this = *this - other;  }
+  inline T1 operator*=(T1 other) { return *this = *this * other;  }
+  inline T1 operator/=(T1 other) { return *this = *this / other;  }
   
   inline auto operator++(int) -> type { type c = *this; ++(*this); return c; }
   inline auto operator--(int) -> type { type c = *this; --(*this); return c; }
@@ -295,7 +298,11 @@ struct pointer {
     ptr = other.ptr;
   }
   
-  template<typename S = T> inline auto pointee() -> S* {
+  template<typename S = T> inline S* pointee() {
+    return ptr ? static_cast<S*>(ptr.hostAddress()) : nullptr;
+  }
+  
+  template<typename S = T> inline S* pointee() const {
     return ptr ? static_cast<S*>(ptr.hostAddress()) : nullptr;
   }
   
@@ -313,7 +320,12 @@ struct pointer {
     return *pointee<S>();
   }
   
-  template<typename S = T> inline auto operator->() -> S* {
+  template<typename S = T> inline S* operator->() const {
+    if (!pointee()) throw bad_pointer("bad pointer");
+    return pointee();
+  }
+  
+  template<typename S = T> inline S* operator->() {
     if (!pointee()) throw bad_pointer("bad pointer");
     return pointee();
   }
@@ -325,23 +337,23 @@ struct pointer {
   }
   
   /// Does the pointer point to a valid address?
-  inline auto valid() -> bool { return ptr.valid(); }
+  inline bool valid() { return ptr.valid(); }
   /// Memory offset of this pointer
-  inline auto offset() -> address { return &ptr; }
+  inline address offset() { return &ptr; }
   /// Address of the pointee
-  inline auto pointeeAddress() -> address { return ptr; }
+  inline address pointeeAddress() { return ptr; }
   /// Dereferenced object
-  inline auto dereference() -> T& { return **this; }
+  inline T& dereference() { return **this; }
   
-  inline auto operator+(auto offset) -> pointer { return (uint8_t*)pointee() + sizeof(T) * offset; }
-  inline auto operator-(auto offset) -> pointer { return (uint8_t*)pointee() - sizeof(T) * offset; }
-  inline auto operator++()           -> pointer { return *this = *this + 1;                        }
-  inline auto operator++(auto)       -> pointer { auto t = *this; *this = *this + 1; return t;     }
-  inline auto operator+=(auto offset)-> pointer { return (*this = *this + offset);                 }
-  inline auto operator-=(auto offset)-> pointer { return (*this = *this - offset);                 }
+  inline pointer operator+(auto offset)  { return (uint8_t*)pointee() + sizeof(T) * offset; }
+  inline pointer operator-(auto offset)  { return (uint8_t*)pointee() - sizeof(T) * offset; }
+  inline pointer operator++()            { return *this = *this + 1;                        }
+  inline pointer operator++(auto)        { auto t = *this; *this = *this + 1; return t;     }
+  inline pointer operator+=(auto offset) { return (*this = *this + offset);                 }
+  inline pointer operator-=(auto offset) { return (*this = *this - offset);                 }
   
   template<typename S = T>
-  inline auto operator==(const pointer<S> other) -> bool { return ptr == other.ptr; }
+  inline bool operator==(const pointer<S> other) { return ptr == other.ptr; }
   inline operator bool() { return valid(); }
   
   using underlying_type = T;
@@ -355,7 +367,7 @@ struct string {
   string() = default;
   static constexpr bool FixedSize { size != 0 };
   
-  inline constexpr auto length() -> size_t {
+  constexpr size_t length() const {
     if constexpr (FixedSize) {
       return size;
     } else {
@@ -363,14 +375,14 @@ struct string {
     }
   }
   
-  auto lastPathComponent() -> std::string {
+  std::string lastPathComponent() {
     std::string string = *this;
     size_t idx = string.rfind(':');
     if (idx == std::string::npos) return "";
     return string.substr(idx + 1);
   }
   
-  inline auto operator=(std::string string) -> void {
+  inline void operator=(std::string string) {
     if constexpr (FixedSize) {
       if (writable()) {
         std::memset(str, 0, size);
@@ -382,16 +394,16 @@ struct string {
   }
   
   /// Return the offset of this string in target memory
-  inline auto memoryOffset() -> address { return &str; }
+  inline address memoryOffset() { return &str; }
   /// Is the string bound to the address space of the target?
-  inline auto memoryBound() -> bool { return memory::memoryBound(str); }
+  inline bool memoryBound() { return memory::memoryBound(str); }
   /// Is the memory of the string writable?
-  inline auto writable() -> bool { return !memoryBound() ? true : !(memory::flags & CPA_MEMORY_READONLY); }
+  inline bool writable() { return !memoryBound() ? true : !(memory::flags & CPA_MEMORY_READONLY); }
   
   inline operator std::string() { return std::string((char*)str, length()); }
   inline operator const char*() { return reinterpret_cast<const char*>(str); }
-  inline auto operator==(const char *str) -> bool { return std::string(str) == std::string(str); }
-  inline auto operator==(std::string str) -> bool { return std::string(str) == std::string(str); }
+  inline bool operator==(const char *str) { return std::string(str) == std::string(str); }
+  inline bool operator==(std::string str) { return std::string(str) == std::string(str); }
   
 private:
   std::conditional_t<FixedSize, char[size], std::string> str;
@@ -715,12 +727,12 @@ struct vector {
   }
   
   //access
-  inline auto x() -> T& { return data[0]; }
-  inline auto y() -> T& { return data[1]; }
-  inline auto z() -> T& { return data[2]; }
-  inline auto w() -> T& { return data[3]; }
-  inline auto xy() -> vector<2> { return vector<2>(x(), y()); }
-  inline auto xyz() -> vector<3> { return vector<3>(x(), y(), z()); }
+  inline T& x() { return data[0]; }
+  inline T& y() { return data[1]; }
+  inline T& z() { return data[2]; }
+  inline T& w() { return data[3]; }
+  inline vector<2> xy() { return vector<2>(x(), y()); }
+  inline vector<3> xyz() { return vector<3>(x(), y(), z()); }
   inline auto& operator[](auto i) { return data[i]; }
   //op
   auto operator +(vector v) { vector result; for(auto i : range(N)) result[i] = data[i] + v[i]; return result; }
@@ -760,7 +772,7 @@ struct matrix {
     }
   };
   
-  static auto identity() {
+  static constexpr matrix identity() {
     matrix result;
     for (auto y : range(Rows)) {
       for (auto x : range(Columns)) {
