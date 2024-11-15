@@ -182,7 +182,7 @@ struct address {
   }
   
   /// Effective (emulated) address
-  inline auto effectiveAddress() -> memory::target_address_type {
+  inline memory::target_address_type effectiveAddress() const {
 #if platform == GCN
     return memory::bswap(addr) & 0x7FFFFFFF;
 #else
@@ -196,8 +196,13 @@ struct address {
     return valid() ? memory::host_address_type(offset) : nullptr;
   }
   
+  inline memory::host_address_type hostAddress() const {
+    intptr_t offset = intptr_t(memory::baseAddress) + intptr_t(effectiveAddress());
+    return valid() ? memory::host_address_type(offset) : nullptr;
+  }
+  
   /// Is the address non-zero?
-  inline auto valid() -> bool {
+  inline bool valid() const {
     return effectiveAddress() != address::zero;
   }
   
@@ -295,7 +300,11 @@ struct pointer {
     ptr = other.ptr;
   }
   
-  template<typename S = T> inline auto pointee() -> S* {
+  template<typename S = T> inline S* pointee() {
+    return ptr ? static_cast<S*>(ptr.hostAddress()) : nullptr;
+  }
+  
+  template<typename S = T> inline S* pointee() const {
     return ptr ? static_cast<S*>(ptr.hostAddress()) : nullptr;
   }
   
@@ -313,7 +322,12 @@ struct pointer {
     return *pointee<S>();
   }
   
-  template<typename S = T> inline auto operator->() -> S* {
+  template<typename S = T> inline S* operator->() const {
+    if (!pointee()) throw bad_pointer("bad pointer");
+    return pointee();
+  }
+  
+  template<typename S = T> inline S* operator->() {
     if (!pointee()) throw bad_pointer("bad pointer");
     return pointee();
   }
