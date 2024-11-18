@@ -15,5 +15,5 @@ cpa::global::loadMemory(memory, memorySize);
 
 // Do stuff
 pointer<stSuperObject> player = global::g_stEngineStructure->currentMainPlayers[0];
-player->position() = stVector3D(-12.0f, 24.0f, 6.0f);
+player->position() = MTH::stVector3D(-12.0f, 24.0f, 6.0f);
 ```

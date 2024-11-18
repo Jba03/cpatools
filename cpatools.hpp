@@ -478,6 +478,19 @@ struct stCollideSet;
 struct stAnim3D;
 // }
 
+namespace MTH {
+template<unsigned N, typename T = float32> struct vector;
+using stVector2D = vector<2>;
+using stVector3D = vector<3>;
+using stVector4D = vector<4>;
+
+template<unsigned Rows, unsigned Columns, typename T> struct matrix;
+using stMatrix3D = matrix<3, 3, float32>;
+#if engine >= R3
+using stMatrix4D = matrix<4, 4, float32>;
+#endif
+};
+
 /// Input module
 namespace IPT {
 struct stInputDevice;
@@ -681,10 +694,10 @@ struct structure : memory::allocable {
   }
 };
 
-#pragma mark - Common types -
+#pragma mark - MTH -
 
-template<unsigned N, typename T = float32>
-struct vector {
+template<unsigned N, typename T>
+struct MTH::vector {
   vector(float v) { for (auto i : range(N)) data[i] = v; }
   template<typename... Args, std::enable_if_t<sizeof...(Args) == N && sizeof...(Args) != 1 && std::conjunction_v<std::is_convertible<Args, float>...>>* = nullptr>
   vector(Args... args) : data { static_cast<float>(args)... } { /* ... */ }
@@ -758,12 +771,8 @@ private:
   std::array<T, N> data;
 };
 
-using stVector2D = vector<2>;
-using stVector3D = vector<3>;
-using stVector4D = vector<4>;
-
 template<unsigned Rows, unsigned Columns, typename T>
-struct matrix {
+struct MTH::matrix {
   matrix() {
     for (auto y : range(Rows)) {
       for (auto x : range(Columns)) {
@@ -811,8 +820,8 @@ struct matrix {
     return (*this = *this * m);
   }
   
-  auto operator*(stVector4D v) -> stVector4D {
-    stVector4D result;
+  auto operator*(MTH::stVector4D v) -> MTH::stVector4D {
+    MTH::stVector4D result;
     for (auto y : range(Rows)) {
       result[y] = 0.0f;
       for (auto x : range(Columns)) {
@@ -822,17 +831,17 @@ struct matrix {
     return result;
   }
   
-  auto operator*(stVector3D v) -> stVector4D {
-    return ((*this) * stVector4D(v.x(), v.y(), v.z(), 1.0f));
+  auto operator*(MTH::stVector3D v) -> MTH::stVector4D {
+    return ((*this) * MTH::stVector4D(v.x(), v.y(), v.z(), 1.0f));
   }
   
-  static auto makeTranslation(stVector3D p) {
+  static auto makeTranslation(MTH::stVector3D p) {
     matrix result = identity();
     for (auto i : range(3)) result(Rows-1,i) = p[i];
     return result;
   }
   
-  static auto makeScale(stVector3D p) {
+  static auto makeScale(MTH::stVector3D p) {
     matrix result = identity();
     for (auto i : range(3)) result(i,i) = p[i];
     return result;
@@ -877,10 +886,10 @@ struct matrix {
     return result;
   }
   
-  static auto makeLookAt(stVector3D eye, stVector3D center, stVector3D up) {
-    stVector3D n = (eye - center).normalize();
-    stVector3D u = up.cross(n).normalize();
-    stVector3D v = n.cross(u);
+  static auto makeLookAt(MTH::stVector3D eye, MTH::stVector3D center, MTH::stVector3D up) {
+    MTH::stVector3D n = (eye - center).normalize();
+    MTH::stVector3D u = up.cross(n).normalize();
+    MTH::stVector3D v = n.cross(u);
     
     float nnx = (-u).dot(eye);
     float nny = (-v).dot(eye);
@@ -958,20 +967,17 @@ struct matrix {
     return result;
   }
   
-  inline auto translation() -> stVector3D& {
-    return *(stVector3D*)&(*this)(Rows-1,0);
+  inline auto translation() -> MTH::stVector3D& {
+    return *(MTH::stVector3D*)&(*this)(Rows-1,0);
   }
   
   inline auto scale(bool ref = false) {
     if (ref) return vector<3, float32*>(&(*this)(0,0), &(*this)(1,1), &(*this)(2,2));
-    return stVector3D((*this)(0,0), (*this)(1,1), (*this)(2,2));
+    return MTH::stVector3D((*this)(0,0), (*this)(1,1), (*this)(2,2));
   }
   
   std::array<T, Rows * Columns> m;
 };
-
-using stMatrix3D = matrix<3, 3, float32>;
-using stMatrix4D = matrix<4, 4, float32>;
 
 #pragma mark - Containers
 
@@ -1042,37 +1048,37 @@ struct stTransform : structure {
   };
   
   stTransform() = default;
-  stTransform(uint32 _type, stMatrix4D T = stMatrix4D(), stVector4D _scale = stVector4D(1.0f, 1.0f, 1.0f, 1.0f)) : type(_type), matrix(T), scale(_scale) { /* ... */ }
+  stTransform(uint32 _type, MTH::stMatrix4D T = MTH::stMatrix4D(), MTH::stVector4D _scale = MTH::stVector4D(1.0f, 1.0f, 1.0f, 1.0f)) : type(_type), matrix(T), scale(_scale) { /* ... */ }
   
   /// Type of the transform
   uint32 type = Type::Uninitialized;
   /// Transform matrix
-  stMatrix4D matrix = stMatrix4D::identity();
+  MTH::stMatrix4D matrix = MTH::stMatrix4D::identity();
   /// Scale parameter
-  stVector4D scale;
+  MTH::stVector4D scale;
   
   /// Translation vector
-  auto translation() -> stVector3D& {
+  auto translation() -> MTH::stVector3D& {
     return matrix.translation();
   }
   
   /// Get rotation vectors if the type is `transformTypeRotation`
-  auto getRotation(stVector3D& i, stVector3D& j, stVector3D& k) -> bool {
+  auto getRotation(MTH::stVector3D& i, MTH::stVector3D& j, MTH::stVector3D& k) -> bool {
     if (static_cast<uint32_t>(type) == Type::Rotation) {
-      i = *(stVector3D*)&matrix(0,0);
-      j = *(stVector3D*)&matrix(1,0);
-      k = *(stVector3D*)&matrix(2,0);
+      i = *(MTH::stVector3D*)&matrix(0,0);
+      j = *(MTH::stVector3D*)&matrix(1,0);
+      k = *(MTH::stVector3D*)&matrix(2,0);
       return true;
     } else {
       return false;
     }
   }
   
-  auto operator*(stVector3D v) -> stVector3D {
-    return (matrix * stVector4D(v.x(), v.y(), v.z(), 1.0f)).xyz();
+  auto operator*(MTH::stVector3D v) -> MTH::stVector3D {
+    return (matrix * MTH::stVector4D(v.x(), v.y(), v.z(), 1.0f)).xyz();
   }
   
-  auto operator*(stVector4D v) -> stVector4D {
+  auto operator*(MTH::stVector4D v) -> MTH::stVector4D {
     return matrix * v;
   }
   
@@ -1088,7 +1094,7 @@ struct stTransform : structure {
     return T;
   }
   
-  auto rotateVector(stVector3D v) -> stVector3D {
+  auto rotateVector(MTH::stVector3D v) -> MTH::stVector3D {
     uint32_t type = this->type;
     if (type == Rotation) {
       return *this * v;
@@ -1347,7 +1353,7 @@ struct stEngineStructure : structure {
 /// Structure for ReadAnalogJoystick function
 struct IPT::stPadReadingOutput : structure {
   /// The world vector the joystick value translates to
-  stVector3D globalVector;
+  MTH::stVector3D globalVector;
   int16 horizontalAxis;
   int16 verticalAxis;
   float32 analogForce;
@@ -1722,7 +1728,7 @@ enum DNM::ObstacleType : unsigned {
 /// Axis-angle
 struct DNM::stDynamicsRotation : structure {
   float32 angle;
-  stVector3D axis;
+  MTH::stVector3D axis;
 };
 
 /// Dynamics base block
@@ -1746,19 +1752,19 @@ struct DNM::stDynamicsBaseBlock : structure {
   /// Rebound factor
   float32 rebound;
   /// Impose absolute speed (after inertia and gravity calculations)
-  stVector3D imposeSpeed;
+  MTH::stVector3D imposeSpeed;
   /// Propose speed (before inertia and gravity calculations)
-  stVector3D proposeSpeed;
+  MTH::stVector3D proposeSpeed;
   /// Previous speed
-  stVector3D previousSpeed;
+  MTH::stVector3D previousSpeed;
   /// Actor scale
-  stVector3D scale;
+  MTH::stVector3D scale;
   /// Animation-specific speed
-  stVector3D animationProposeSpeed;
+  MTH::stVector3D animationProposeSpeed;
   /// Previous safe translation
-  stVector3D safeTranslation;
+  MTH::stVector3D safeTranslation;
   /// Additional translation
-  stVector3D addTranslation;
+  MTH::stVector3D addTranslation;
   
 #if engine == R3 && platform == GCN
   /// Padding
@@ -1770,7 +1776,7 @@ struct DNM::stDynamicsBaseBlock : structure {
   /// Current transform
   stTransform currentTransform;
   /// Impose absolute rotation
-  stMatrix3D imposedRotation;
+  MTH::stMatrix3D imposedRotation;
   /// Previous number of frames
   uint8 numFrames;
   /// Padding
@@ -1787,31 +1793,31 @@ struct DNM::stDynamicsBaseBlock : structure {
 /// Dynamics advanced block
 struct DNM::stDynamicsAdvancedBlock : structure {
   /// Inertia (NOTE: originally component-separated)
-  stVector3D inertia;
+  MTH::stVector3D inertia;
   /// Priority of stream
   float32 streamPriority;
   /// Stream effect factor
   float32 streamFactor;
   /// Slide factor (NOTE: originally component-separated)
-  stVector3D slideFactor;
+  MTH::stVector3D slideFactor;
   /// Previous slide
   float32 previousSlide;
   /// Speed limit
-  stVector3D maxSpeed;
+  MTH::stVector3D maxSpeed;
   /// Speed of stream
-  stVector3D streamSpeed;
+  MTH::stVector3D streamSpeed;
   /// Speed to add
-  stVector3D addSpeed;
+  MTH::stVector3D addSpeed;
   /// Positional limits?
-  stVector3D limit;
+  MTH::stVector3D limit;
   /// Collision translation
-  stVector3D collisionTranslation;
+  MTH::stVector3D collisionTranslation;
   /// Translation separate of inertia
-  stVector3D inertiaTranslation;
+  MTH::stVector3D inertiaTranslation;
   /// The normal of the collide ground, if any
-  stVector3D groundNormal;
+  MTH::stVector3D groundNormal;
   /// The normal of the collided wall, if any
-  stVector3D wallNormal;
+  MTH::stVector3D wallNormal;
   /// Number of calls made to mechanics without colliding with anything
   int8 collideCount;
   /// Padding
@@ -1822,9 +1828,9 @@ struct DNM::stDynamicsAdvancedBlock : structure {
 /// "Module Allowing the Communication of Datas from the Player or the Intelligence to the Dynamics"
 struct DNM::stMACDPID : structure {
   float32 data0;
-  stVector3D data1;
-  stVector3D data2;
-  stVector3D data3;
+  MTH::stVector3D data1;
+  MTH::stVector3D data2;
+  MTH::stVector3D data3;
   float32 data4;
   float32 data5;
   float32 data6;
@@ -1832,9 +1838,9 @@ struct DNM::stMACDPID : structure {
   stDynamicsRotation data8;
   int8 data9;
   uint16 data10;
-  stVector3D data11;
+  MTH::stVector3D data11;
   float32 data12;
-  stVector3D data13;
+  MTH::stVector3D data13;
   float32 data14;
   uint8 data15;
 };
@@ -1846,8 +1852,8 @@ struct DNM::stDynamicsComplexBlock : structure {
   float32 tiltOrigin;
   float32 tiltAngle;
   float32 hangingLimit;
-  stVector3D contact;
-  stVector3D fallTranslation;
+  MTH::stVector3D contact;
+  MTH::stVector3D fallTranslation;
   /// Injectable parameters
   stMACDPID macdpid;
   pointer<stSuperObject> platformSuperObject;
@@ -1860,9 +1866,9 @@ struct DNM::stDynamicsObstacle : structure {
   /// Collision rate
   float32 rate;
   /// Contact normal
-  stVector3D normal;
+  MTH::stVector3D normal;
   /// World contact point
-  stVector3D contact;
+  MTH::stVector3D contact;
   /// Material for entity 1 (self)
   pointer<GMT::stGameMaterial> myMaterial;
   /// Material for entity 2 (object collided with)
@@ -1874,7 +1880,7 @@ struct DNM::stDynamicsObstacle : structure {
 /// A linear and angular movement offset
 struct DNM::stDynamicsMovement : structure {
   /// The linear movement
-  stVector3D linear;
+  MTH::stVector3D linear;
   /// The angular movement
   stDynamicsRotation angular;
 };
@@ -1927,9 +1933,9 @@ struct DNM::stDynamics : structure {
 };
 
 struct DNM::stDynamicsParsingData : structure {
-  stVector3D position;
+  MTH::stVector3D position;
   float32 outAlpha;
-  stVector3D vector;
+  MTH::stVector3D vector;
 };
 
 /// Dynamics reference structure
@@ -1955,9 +1961,9 @@ struct MEC::stMechanicsObstacle : structure {
   /// Collision rate
   float32 rate;
   /// Contact normal
-  stVector3D normal;
+  MTH::stVector3D normal;
   /// World contact poimt
-  stVector3D contact;
+  MTH::stVector3D contact;
   /// Material for entity 1 (self)
   pointer<GMT::stGameMaterial> myMaterial;
   /// Material for entity 2 (object collided with)
@@ -1971,11 +1977,11 @@ struct MEC::stMechanicsObstacle : structure {
   /// Entity 2 type (object collided with)
   int16 collidedEntity;
   /// Translation to resolve the collision
-  stVector3D translation;
+  MTH::stVector3D translation;
   /// Zone movement
-  stVector3D zoneMove;
+  MTH::stVector3D zoneMove;
   /// End position of dynamic object
-  stVector3D zonePosition;
+  MTH::stVector3D zonePosition;
   /// Zone radius of dynamic object
   float32 zoneRadius;
 };
@@ -2067,7 +2073,7 @@ struct stEngineObject : structure {
   inline auto superobject() -> pointer<stSuperObject>;
   
   /// Get the speed of this actor
-  inline auto speed() -> stVector3D;
+  inline auto speed() -> MTH::stVector3D;
   /// Get the horizontal speed of this actor
   inline auto horizontalSpeed() -> float;
   /// Get the vertical speed of this actor
@@ -2104,8 +2110,8 @@ struct SECT::stSector : structure {
   stDoublyLinkedList<stListOfSectorsInActivityInteraction> sectorsInActivityInteraction;
   stDoublyLinkedList<stListOfSectorsInSoundInteraction> sectorsInSoundInteraction;
   stDoublyLinkedList<> soundEventList;
-  stVector3D min;
-  stVector3D max;
+  MTH::stVector3D min;
+  MTH::stVector3D max;
   float32 farPlane;
   uint8 isVirtual;
   int8 cameraType;
@@ -2159,9 +2165,9 @@ enum COL::ElementType : int {
 
 struct COL::stOctreeNode : structure {
   /// Minimum point
-  stVector3D min;
+  MTH::stVector3D min;
   /// Maximum point
-  stVector3D max;
+  MTH::stVector3D max;
   /// 8 child nodes
   doublepointer<stOctreeNode> children;
   /// Face indices: overlapping indices into element and element data. May be NULL.
@@ -2183,9 +2189,9 @@ struct COL::stOctree : structure {
   /// Element bases table
   pointer<uint16> elementBases;
   /// Minimum point
-  stVector3D min;
+  MTH::stVector3D min;
   /// Maximum point
-  stVector3D max;
+  MTH::stVector3D max;
 };
 
 struct COL::stCollideObject : structure {
@@ -2198,7 +2204,7 @@ struct COL::stCollideObject : structure {
   /// Padding
   padding(2)
   /// Vertex data
-  pointer<stVector3D> vertices;
+  pointer<MTH::stVector3D> vertices;
   /// Element types
   pointer<int16> elementTypes;
   /// stCollideElement...
@@ -2210,7 +2216,7 @@ struct COL::stCollideObject : structure {
   /// Radius of the bounding sphere which encompasses this object
   float32 boundingSphereRadius;
   /// Position of the bounding sphere which encompasses this object
-  stVector4D boundingSpherePosition;
+  MTH::stVector4D boundingSpherePosition;
 };
 
 struct COL::stPhysicalCollideSet : structure {
@@ -2222,7 +2228,7 @@ struct COL::stPhysicalCollideSet : structure {
 
 struct COL::stColliderInfo : structure {
   pointer<stSuperObject> colliderActors[2];
-  stVector3D colliderVectors[2];
+  MTH::stVector3D colliderVectors[2];
   float32 colliderReal[2];
   uint8 colliderType;
   uint8 colliderPriority;
@@ -2291,7 +2297,7 @@ struct COL::stCollideElementIndexedTriangles : structure {
   /// Indices into collide element vertex array
   pointer<uint16> faceIndices;
   /// List of normals
-  pointer<stVector3D> normals;
+  pointer<MTH::stVector3D> normals;
   /// Number of faces
   int16 numFaces;
   /// Index of AABB
@@ -2301,7 +2307,7 @@ struct COL::stCollideElementIndexedTriangles : structure {
   /// Indices of triangle edges
   pointer<uint16> edgeIndices;
   /// Indices of edge normals
-  pointer<stVector3D> edgeNormals;
+  pointer<MTH::stVector3D> edgeNormals;
   /// Edge coefficients
   pointer<float32> edgeCoefficients;
   /// Number of edges
@@ -2349,9 +2355,9 @@ struct COL::stCollisionCase : structure {
   /// Time of collision (-1.0 to 1.0)
   float32 collisionTime;
   /// Normal of the collision
-  stVector3D collisionNormal;
+  MTH::stVector3D collisionNormal;
   /// World point of the collision
-  stVector3D collisionPoint;
+  MTH::stVector3D collisionPoint;
   /// Material of the dynamic object
   pointer<GMT::stGameMaterial> dynamicMaterial;
   /// Material of the static object
@@ -2362,9 +2368,9 @@ struct COL::stCollisionCase : structure {
   int32 param2;
   int16 dynamicEntity;
   int16 staticEntity;
-  stVector3D translation;
-  stVector3D movement;
-  stVector3D endPosition;
+  MTH::stVector3D translation;
+  MTH::stVector3D movement;
+  MTH::stVector3D endPosition;
   float32 sphereRadius;
   float32 slide1;
   float32 rebound1;
@@ -2387,14 +2393,14 @@ struct COL::stCollideElementAlignedBoxes : structure {
 #define COL_MaxSelectedOctreeNodes  100
 
 struct COL::stGVForCollision : structure {
-  pointer<stVector3D> vertex1;
-  stVector3D edgeVector;
-  pointer<stVector3D> vertex2;
-  stVector3D dinST0Point;
+  pointer<MTH::stVector3D> vertex1;
+  MTH::stVector3D edgeVector;
+  pointer<MTH::stVector3D> vertex2;
+  MTH::stVector3D dinST0Point;
   float32 dynamicRadius;
   pointer<stTransform> staticGeometricObjMatrix;
-  stVector3D dinST1Point;
-  stVector3D dinST01Vector;
+  MTH::stVector3D dinST1Point;
+  MTH::stVector3D dinST01Vector;
   pointer<GMT::stGameMaterial> dynamicMaterial;
   pointer<GMT::stGameMaterial> staticMaterial;
   pointer<> vParameter1;
@@ -2421,9 +2427,9 @@ struct COL::stGVForCollision : structure {
   pointer<stCollideElementIndexedSpheres> staticElementSpheres;
   int32 bitFieldOfIndexedSpheresInCollision;
   pointer<stCollideElementIndexedSphere> staticIndexedSphere;
-  stVector3D swapDinST0Point;
-  pointer<stVector3D> dynamicCenter;
-  pointer<stVector3D> staticCenter;
+  MTH::stVector3D swapDinST0Point;
+  pointer<MTH::stVector3D> dynamicCenter;
+  pointer<MTH::stVector3D> staticCenter;
   float32 swapRadius;
   uint8 useEnlargedSphere;
   int16 numSelectedNodes;
@@ -2432,27 +2438,27 @@ struct COL::stGVForCollision : structure {
   pointer<stCollideElementAlignedBoxes> dynamicElementAlignedBoxes;
   int16 dynamicIndexedAlignedBoxIndex;
   pointer<stIndexedAlignedBox> dynamicIndexedAlignedBox;
-  pointer<stVector3D> dynamicMinPoint;
-  pointer<stVector3D> dynamicMaxPoint;
-  stVector3D dinST0MaxPoint;
-  stVector3D dinST0MinPoint;
-  stVector3D dinST1MaxPoint;
-  stVector3D dinST1MinPoint;
-  stVector3D dinST08VBox[8];
-  stVector3D dinST18VBox[8];
-  stVector3D dinST01Vect[8];
+  pointer<MTH::stVector3D> dynamicMinPoint;
+  pointer<MTH::stVector3D> dynamicMaxPoint;
+  MTH::stVector3D dinST0MaxPoint;
+  MTH::stVector3D dinST0MinPoint;
+  MTH::stVector3D dinST1MaxPoint;
+  MTH::stVector3D dinST1MinPoint;
+  MTH::stVector3D dinST08VBox[8];
+  MTH::stVector3D dinST18VBox[8];
+  MTH::stVector3D dinST01Vect[8];
   int16 staticIndexedSphereIndex;
   pointer<stCollideElementAlignedBoxes> staticElementAlignedBoxes;
   pointer<stIndexedAlignedBox> staticIndexedBox;
-  pointer<stVector3D> pStaticMinPoint;
-  pointer<stVector3D> pStaticMaxPoint;
-  stVector3D staticMinPoint;
-  stVector3D staticMaxPoint;
-  stVector3D static8VBox[8];
+  pointer<MTH::stVector3D> pStaticMinPoint;
+  pointer<MTH::stVector3D> pStaticMaxPoint;
+  MTH::stVector3D staticMinPoint;
+  MTH::stVector3D staticMaxPoint;
+  MTH::stVector3D static8VBox[8];
 };
 
 struct COL::stBoundingSphere : structure {
-  stVector4D center;
+  MTH::stVector4D center;
   float32 radius;
 #if engine == R3 && platform == PS2
   padding(12)
@@ -2460,8 +2466,8 @@ struct COL::stBoundingSphere : structure {
 };
 
 struct COL::stParallelBox : structure {
-  stVector3D min;
-  stVector3D max;
+  MTH::stVector3D min;
+  MTH::stVector3D max;
 };
 
 #pragma mark - GEO
@@ -2486,8 +2492,8 @@ union GEO::uVisualObject {
 };
 
 struct GEO::stGeometricObject : structure {
-  pointer<stVector3D> vertices;
-  pointer<stVector3D> vertexNormals;
+  pointer<MTH::stVector3D> vertices;
+  pointer<MTH::stVector3D> vertexNormals;
 #if engine == R3 && platform == GCN
   pointer<> unknown;
 #endif
@@ -2505,7 +2511,7 @@ struct GEO::stGeometricObject : structure {
 #if engine == R3 && platform == PS2
   padding(4)
 #endif
-  stVector4D boundingSphereCenter;
+  MTH::stVector4D boundingSphereCenter;
   pointer<> edgesDI;
   int16 numEdgesDI;
   int16 numOctreeEdges;
@@ -2539,8 +2545,8 @@ struct GEO::stVisualElementIndexedTriangles : structure {
   padding(4)
 #endif
   pointer<uint16> faceUVIndices;
-  pointer<stVector3D> faceNormals;
-  pointer<stVector2D> UVElements;
+  pointer<MTH::stVector3D> faceNormals;
+  pointer<MTH::stVector2D> UVElements;
   pointer<> edges;
   pointer<> adjacentFaces;
   pointer<uint16> vertexIndices;
@@ -2578,8 +2584,8 @@ struct GEO::stColor {
 };
 
 struct GEO::stParallelBox : structure {
-  stVector3D min;
-  stVector3D max;
+  MTH::stVector3D min;
+  MTH::stVector3D max;
 };
 
 #pragma mark - GMT
@@ -2587,7 +2593,7 @@ struct GEO::stParallelBox : structure {
 struct GMT::stCollideMaterial : structure {
   int16 zoneType;
   uint16 identifier;
-  stVector3D direction;
+  MTH::stVector3D direction;
   float32 coefficient;
   uint16 aiType;
   padding(2)
@@ -2679,7 +2685,7 @@ struct stSuperObject : structure {
   /// The bounding box of the collision of this object
   pointer<COL::stParallelBox> collideBoundingBox;
   /// Approximate lookat vector
-  stVector3D semiLookAt;
+  MTH::stVector3D semiLookAt;
   /// Render transparency
   float32 transparency;
   /// Color of outline (when drawflags are set?)
@@ -2689,11 +2695,11 @@ struct stSuperObject : structure {
   /// ?
   int32 ilstatus;
   /// Ambient light default color
-  stVector3D ambientColor;
+  MTH::stVector3D ambientColor;
   ///
-  stVector3D parallelDirection;
+  MTH::stVector3D parallelDirection;
   ///
-  stVector3D parallelColor;
+  MTH::stVector3D parallelColor;
   /// Superimpose on the viewport
   uint8 superimpose;
   ///
@@ -2708,7 +2714,7 @@ struct stSuperObject : structure {
   /// Return the name of the superobject
   inline auto name(bool fullname = false) -> std::string;
   /// Get the position of the superobject
-  inline auto position() -> stVector3D&;
+  inline auto position() -> MTH::stVector3D&;
   
   /// Adds a new child object to this superobject,
   /// detaching it from any previous hierarchy.
@@ -3046,13 +3052,13 @@ struct GLI::stCamera : structure {
   stVertex2D trans;
   float32 xProjectionR;
   float32 yprojectionR;
-  stVector3D left;
+  MTH::stVector3D left;
   float32 dLeft;
-  stVector3D right;
+  MTH::stVector3D right;
   float32 dRight;
-  stVector3D up;
+  MTH::stVector3D up;
   float32 dUp;
-  stVector3D down;
+  MTH::stVector3D down;
   float32 dDown;
   float32 ratio;
   uint8 transparency;
@@ -3185,7 +3191,7 @@ struct GLI::stMaterial : structure {
 #pragma mark - WP
 
 struct WP::stWayPoint : structure {
-  stVector3D point;
+  MTH::stVector3D point;
   float32 radius;
   pointer<stSuperObject> superobject;
 };
@@ -3392,11 +3398,11 @@ auto stEngineObject::dsgVar(int idx, uint32_t* type) -> pointer<> {
   }
 }
 
-auto stEngineObject::speed() -> stVector3D {
+auto stEngineObject::speed() -> MTH::stVector3D {
   try {
     return dynam->dynamics->base.previousSpeed;
   } catch (bad_pointer& e) {
-    return stVector3D(0.0f, 0.0f, 0.0f);
+    return MTH::stVector3D(0.0f, 0.0f, 0.0f);
   }
 }
 
@@ -3457,7 +3463,7 @@ auto stSuperObject::name(bool fullname) -> std::string {
   }
 }
 
-auto stSuperObject::position() -> stVector3D& {
+auto stSuperObject::position() -> MTH::stVector3D& {
   try {
     return globalTransform->translation();
   } catch (bad_pointer& e) {
@@ -3477,7 +3483,7 @@ auto COL::stZdxList::all() -> std::vector<pointer<stCollideObject>> {
 #pragma mark - Static functions
 
 /// Determine the sector of a world-space point
-static inline auto sectorSearch(pointer<stSuperObject> fatherSector, stVector3D point) -> pointer<stSuperObject> {
+static inline auto sectorSearch(pointer<stSuperObject> fatherSector, MTH::stVector3D point) -> pointer<stSuperObject> {
   try {
     float dNear = INFINITY;
     float dCurrent = INFINITY;
@@ -3490,11 +3496,11 @@ static inline auto sectorSearch(pointer<stSuperObject> fatherSector, stVector3D 
     
     fatherSector->forEachChild([&](pointer<stSuperObject> object, void*) {
       pointer<SECT::stSector> sector = object->sector;
-      stVector3D min = sector->min;
-      stVector3D max = sector->max;
+      MTH::stVector3D min = sector->min;
+      MTH::stVector3D max = sector->max;
       
       if (point >= min && point <= max) {
-        stVector3D distance = (min + max) / 2.0f - point;
+        MTH::stVector3D distance = (min + max) / 2.0f - point;
         dNear = distance.length();
         
         if (!sector->isVirtual) {
