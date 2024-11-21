@@ -2751,13 +2751,13 @@ struct stSuperObject: structure {
   }
   
   /// Find a superobject in this hierarchy
-  auto find(std::string name) -> pointer<stSuperObject> {
-    _recurse(this, nullptr, [&name](pointer<stSuperObject> obj, void*) {
-      std::string found = obj->name();
-      printf("finding: %s\n", found.c_str());
-      if (found == name) return obj;
+  pointer<stSuperObject> find(std::string name) {
+    pointer<stSuperObject> result = nullptr;
+    _recurse(this, nullptr, [&name, &result](pointer<stSuperObject> obj, void*) {
+      if (!std::strcmp(obj->name().c_str(), name.c_str()))
+        return (result = obj);
     });
-    return nullptr;
+    return result;
   }
   
   /// Recurse the tree below this superobject
