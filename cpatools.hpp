@@ -3032,6 +3032,41 @@ struct AI::stDsgMem: structure {
 
 #pragma mark - GLI
 
+#define GLI_Flag_Textured                     (1 << 0)
+#define GLI_Flag_GouraudShading               (1 << 1)
+#define GLI_Flag_DisableDrawWireframe         (1 << 2)
+#define GLI_Flag_DisableDrawGrid              (1 << 3)
+#define GLI_Flag_DisableDrawDotted            (1 << 4)
+#define GLI_Flag_DisableDrawOutline           (1 << 5)
+#define GLI_Flag_DisableDrawCollideInfo       (1 << 6)
+#define GLI_Flag_DisableDrawCollideInfoLight  (1 << 7)
+#define GLI_Flag_DisableForceDefaultMaterial  (1 << 8)
+#define GLI_Flag_DisableForceColorMaterial    (1 << 9)
+#define GLI_Flag_BackfaceCulling              (1 << 10)
+#define GLI_Flag_DisableDrawBoundingVolume    (1 << 11)
+#define GLI_Flag_RLI                          (1 << 12)
+#define GLI_Flag_DisableComputeSpecular       (1 << 13)
+
+#define GLI_Flag_NoPriority                   (1 << 14)
+#define GLI_Flag_UseStaticLights              (1 << 15)
+#define GLI_Flag_UseShadow                    (1 << 16)
+#define GLI_Flag_UnderwaterCamera             (1 << 17)
+#define GLI_Flag_DisableForceDepthTest        (1 << 18)
+#define GLI_Flag_DisableBackfaceInversion     (1 << 19)
+#define GLI_Flag_DrawUnderwaterObjects        (1 << 20)
+#define GLI_Flag_DrawNothing                  (1 << 21)
+#define GLI_Flag_NotChromed                   (1 << 22)
+#define GLI_Flag_NotVisibleInRealWorld        (1 << 23)
+#define GLI_Flag_NotVisibleInSymmetricWorld   (1 << 24)
+#define GLI_Flag_DisableDrawingInMirror       (1 << 25)
+#define GLI_Flag_NotLightAlphaSensitive       (1 << 26)
+#define GLI_Flag_DepthBufferWrite             (1 << 27)
+#define GLI_Flag_HasNoMirror                  (1 << 28)
+#define GLI_Flag_NoSinusEffectRLI             (1 << 29)
+#define GLI_Flag_DepthTestEnable              (1 << 30)
+#define GLI_Flag_NoSinusEffect                (1 << 31)
+
+
 struct GLI::stVertex2D: structure {
   float32 x;
   float32 y;
