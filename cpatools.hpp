@@ -352,6 +352,10 @@ struct pointer {
   inline pointer operator+=(auto offset) { return (*this = *this + offset);                 }
   inline pointer operator-=(auto offset) { return (*this = *this - offset);                 }
   
+  // for use as keys in std::map
+  inline bool operator<(const pointer<T>& other) const { return ptr < other.ptr; }
+  inline bool operator>(const pointer<T>& other) const { return ptr > other.ptr; }
+  
   template<typename S = T>
   inline bool operator==(const pointer<S> other) { return ptr == other.ptr; }
   inline operator bool() { return valid(); }
@@ -3118,8 +3122,8 @@ struct GLI::stLight: structure {
   int16 lightType;
   padding(2);
   
-  float32 far;
   float32 near;
+  float32 far;
   float32 littleAlpha;
   float32 bigAlpha;
   float32 littleTangent;
