@@ -1,5 +1,5 @@
-#ifndef _CPATOOLS_HPP_
-#define _CPATOOLS_HPP_
+#ifndef CPATOOLS_HH
+#define CPATOOLS_HH
 
 #define CPA_BIG_ENDIAN 1
 #define CPA_LITTLE_ENDIAN 0
@@ -81,11 +81,12 @@
 #include <string>
 #include <fstream>
 #include <limits>
+#include <functional>
 
 #include <any>
 #include <unordered_map>
 
-namespace cpa {
+namespace CPA {
 
 struct _range {
   struct iterator {
@@ -111,50 +112,47 @@ static constexpr inline auto range(int64_t sz) {
   return _range { 0, sz, 1 };
 }
 
-static constexpr float EPSILON = 1e-6;
-
-
 #pragma mark - Memory -
 
 #define CPA_MEMORY_READONLY (1 << 0)
 #define CPA_MEMORY_EXTERNAL (1 << 1)
 
-namespace memory {
-using size_type = size_t;
-using host_address_type = void*;
-using target_address_type = uint32_t;
+namespace Memory {
+using SizeType = size_t;
+using HostAddressType = void*;
+using TargetAddressType = uint32_t;
 
 #if endianness == CPA_BIG_ENDIAN
-static constexpr std::endian _endianness = std::endian::big;
+constexpr static std::endian Endianness = std::endian::big;
 #elif endianness == CPA_LITTLE_ENDIAN
-static constexpr std::endian _endianness = std::endian::little;
+constexpr static std::endian Endianness = std::endian::little;
 #else
 # error Unknown endianness
 #endif
 
 #if defined(CPA_TARGET_EMULATOR) && (platform == GCN)
-static constexpr auto PhysicalAddressingMask = 0x80000000;
-static constexpr auto EffectiveAddressingMask = 0x7FFFFFFF;
+constexpr static auto PhysicalAddressingMask = 0x80000000;
+constexpr static auto EffectiveAddressingMask = 0x7FFFFFFF;
 #else
-static constexpr auto PhysicalAddressingMask = std::numeric_limits<target_address_type>::min();
-static constexpr auto EffectiveAddressingMask = std::numeric_limits<target_address_type>::max();
+constexpr static auto PhysicalAddressingMask = std::numeric_limits<TargetAddressType>::min();
+constexpr static auto EffectiveAddressingMask = std::numeric_limits<TargetAddressType>::max();
 static_assert(PhysicalAddressingMask == 0, "Expected unsigned address type");
 #endif
 
-
-/// The base address of the engine
-CPA_EXTERN host_address_type baseAddress;
-/// Size of the memory space
-CPA_EXTERN size_type size;
-/// Flags: CPA_MEMORY_...
-CPA_EXTERN unsigned flags;
+/// The base address of the memory space
+extern HostAddressType MemoryBaseAddress;
+/// Total size of the memory space
+extern SizeType MemorySize;
+/// ``CPA_MEMORY...``
+extern int MemoryFlags;
 
 static inline uint16_t bswap16(uint16_t value) { return value << 8 | value >> 8; }
 static inline uint32_t bswap32(uint32_t value) { return (uint32_t)bswap16(value) << 16 | bswap16(value >> 16); }
 static inline uint64_t bswap64(uint64_t value) { return (uint64_t)bswap32(value) << 32 | bswap32(value >> 32); }
 
-template<typename T> static inline T constexpr bswap(const T v) {
-  if constexpr (_endianness != std::endian::native && std::is_integral<T>::value) {
+template<typename T>
+static inline T constexpr bswap(const T v) {
+  if constexpr (Endianness != std::endian::native && std::is_integral<T>::value) {
     if constexpr (sizeof(T) == 1) return v;
     if constexpr (sizeof(T) == 2) return bswap16(v);
     if constexpr (sizeof(T) == 4) return bswap32(v);
@@ -165,94 +163,90 @@ template<typename T> static inline T constexpr bswap(const T v) {
 }
 
 /// Returns true if the specified address is within the memory range
-static inline bool memoryBound(memory::host_address_type addr) {
-  return intptr_t(addr) >= intptr_t(baseAddress) && intptr_t(addr) <= intptr_t(baseAddress) + size;
+template<typename T>
+static inline bool MemoryBound(const T* addr) {
+  return intptr_t(addr) >= intptr_t(MemoryBaseAddress) && intptr_t(addr) <= intptr_t(MemoryBaseAddress) + MemorySize;
 }
 
 /// An address type on the target platform
-struct address {
-  address() = default;
-  static constexpr memory::target_address_type zero = 0;
+struct Address {
+  Address() = default;
+  static constexpr auto Invalid = 0;
   
-  address(memory::target_address_type physicalAddress) {
-    addr = memory::bswap(physicalAddress);
+  Address(const TargetAddressType physicalAddress) {
+    addr = bswap(physicalAddress);
   }
   
-  address(memory::host_address_type hostAddress) {
-    intptr_t offset = intptr_t(hostAddress) - intptr_t(memory::baseAddress);
-    addr = hostAddress ? memory::bswap(static_cast<memory::target_address_type>(offset)) : address::zero;
+  Address(const HostAddressType hostAddress) {
+    intptr_t offset = reinterpret_cast<intptr_t>(hostAddress) - reinterpret_cast<intptr_t>(MemoryBaseAddress);
+    if (hostAddress)
+      addr = bswap(static_cast<TargetAddressType>(offset));
+    else
+      addr = Address::Invalid;
   }
   
   /// Physical hardware address
-  inline memory::target_address_type physicalAddress() const {
-    return memory::bswap(addr) | PhysicalAddressingMask;
+  inline TargetAddressType physicalAddress() const {
+    return bswap(addr) | PhysicalAddressingMask;
   }
   
   /// Effective (emulated) address
-  inline memory::target_address_type effectiveAddress() const {
-    return memory::bswap(addr) & EffectiveAddressingMask;
+  inline TargetAddressType effectiveAddress() const {
+    return bswap(addr) & EffectiveAddressingMask;
   }
   
   /// Host platform address
-  inline memory::host_address_type hostAddress() const {
-    intptr_t offset = intptr_t(memory::baseAddress) + intptr_t(effectiveAddress());
-    return valid() ? memory::host_address_type(offset) : nullptr;
+  inline HostAddressType hostAddress() const {
+    if (!*this) return nullptr;
+    intptr_t offset = reinterpret_cast<intptr_t>(MemoryBaseAddress) + static_cast<intptr_t>(effectiveAddress());
+    return reinterpret_cast<HostAddressType>(offset);
   }
   
-  /// Is the address non-zero?
-  inline bool valid() const {
-    return effectiveAddress() != address::zero;
-  }
-  
-  inline operator bool() {
-    return valid();
-  }
-  
-  inline bool operator==(address other) {
-    return effectiveAddress() == other.effectiveAddress();
-  }
-  
-  inline operator memory::target_address_type() const {
+  inline operator TargetAddressType() const {
     return addr;
   }
   
-  template<typename T> inline operator T*() {
-    return (T*)hostAddress();
+  template<typename T> inline operator T*() const {
+    return static_cast<T*>(hostAddress());
+  }
+  
+  inline bool operator==(Address other) const {
+    return effectiveAddress() == other.effectiveAddress();
   }
   
 private:
-  memory::target_address_type addr = address::zero;
+  TargetAddressType addr { Address::Invalid };
 };
 
 /// A type convertible to and from target platform memory
-/// T0 = Base type, T1 = Operator type
+/// `T0` = Base type, `T1` = Operator type
 template<typename T0, typename T1>
-struct type {
-  type() = default;
+struct Type {
+  Type() = default;
   
-  template<typename S> inline type(const S value) {
+  template<typename S>
+  inline Type(const S value) {
     if constexpr (std::is_same<S, float>::value) {
       data = bswap(*(T0*)&value);
     }
   }
   
-  template<typename S> inline type& operator=(const S value) {
+  template<typename S>
+  inline Type& operator=(const S value) {
     if (writable())
       data = bswap(*(T0*)&value);
     return *this;
   }
   
   inline operator T1() const {
-    T0 tmp = bswap(*(T0*)(&data));
-    return *(T1*)&tmp;
+    T0 tmp = bswap(*const_cast<T0*>(&data));
+    return *(T1*)(&tmp);
   }
   
-  /// Return the offset of this type in target memory
-  inline address memoryOffset() { return &data; }
   /// Is the type bound to the address space of the target?
-  inline bool memoryBound() { return memory::memoryBound(&data); }
+  inline bool memoryBound() const { return MemoryBound(&data); }
   /// Is the memory of the type writable?
-  inline bool writable() { return !memoryBound() ? true : !(memory::flags & CPA_MEMORY_READONLY); }
+  inline bool writable() { return !memoryBound() ? true : !(Memory::MemoryFlags & CPA_MEMORY_READONLY); }
   
   inline T1 operator+(std::integral auto value) { return T1(data) + T1(value); }
   inline T1 operator-(std::integral auto value) { return T1(data) - T1(value); }
@@ -264,114 +258,103 @@ struct type {
   inline T1 operator*=(T1 other) { return *this = *this * other;  }
   inline T1 operator/=(T1 other) { return *this = *this / other;  }
   
-  inline auto operator++(int) -> type { type c = *this; ++(*this); return c; }
-  inline auto operator--(int) -> type { type c = *this; --(*this); return c; }
-  inline auto operator++() -> type& { *this += 1; return *this; }
-  inline auto operator--() -> type& { *this -= 1; return *this; }
-  inline auto operator-() -> T1 { type v = *this; return -T1(v); }
+  inline auto operator++(int) -> Type { Type c = *this; ++(*this); return c; }
+  inline auto operator--(int) -> Type { Type c = *this; --(*this); return c; }
+  inline auto operator++() -> Type& { *this += 1; return *this; }
+  inline auto operator--() -> Type& { *this -= 1; return *this; }
+  inline auto operator-() -> T1 { Type v = *this; return -T1(v); }
   
   inline auto operator|=(T1 other) { *this = *this | other; return *this; }
   inline auto operator&=(T1 other) { *this = *this & other; return *this; }
   inline auto operator^=(T1 other) { *this = *this ^ other; return *this; }
   
-  using underlying_type = T1;
+  using UnderlyingType = T1;
 private:
   T0 data = 0;
 };
 
 /// A pointer exception
-struct bad_pointer {
+struct BadPointer {
   std::string what() { return msg; }
-  bad_pointer(std::string s) : msg(s) { /* ... */ }
+  BadPointer(std::string s) : msg(s) { /* ... */ }
 private:
   std::string msg;
 };
 
 /// A pointer
-template<typename T = address>
-struct pointer {
-  pointer() = default;
-  pointer(address addr) { ptr = addr; }
-  pointer(memory::host_address_type addr) { ptr = addr; }
+template<typename T = Address>
+struct Pointer {
+  Pointer() = default;
+  Pointer(Address addr) { ptr = addr; }
+  Pointer(HostAddressType addr) { ptr = addr; }
   
-  template<typename S> inline pointer(pointer<S> other) {
+  template<typename S>
+  Pointer(const Pointer<S> other) {
     ptr = other.ptr;
   }
   
-  template<typename S = T> inline S* pointee() {
-    return ptr ? static_cast<S*>(ptr.hostAddress()) : nullptr;
+  
+  inline Address pointee() const {
+    return ptr;
   }
-  
-  template<typename S = T> inline S* pointee() const {
-    return ptr ? static_cast<S*>(ptr.hostAddress()) : nullptr;
-  }
-  
-  template<typename S = T> inline operator S*() {
-    return pointee<S>();
-  }
-  
-  template<typename S = T> inline const S& operator*() const {
-    if (!pointee()) throw bad_pointer("bad pointer dereference");
-    return *pointee<S>();
-  }
-  
-  template<typename S = T> inline S& operator*() {
-    if (!pointee()) throw bad_pointer("bad pointer dereference");
-    return *pointee<S>();
-  }
-  
-  template<typename S = T> inline S* operator->() const {
-    if (!pointee()) throw bad_pointer("bad pointer");
-    return pointee();
-  }
-  
-  template<typename S = T> inline S* operator->() {
-    if (!pointee()) throw bad_pointer("bad pointer");
-    return pointee();
-  }
-  
-  template<typename S = T> inline S& operator[](auto idx) {
-    S* obj = pointee();
-    if (!obj) throw bad_pointer("array access into bad pointer");
-    return *(obj + idx);
-  }
-  
-  /// Does the pointer point to a valid address?
-  inline bool valid() { return ptr.valid(); }
-  /// Memory offset of this pointer
-  inline address offset() { return &ptr; }
-  /// Address of the pointee
-  inline address pointeeAddress() { return ptr; }
-  /// Dereferenced object
-  inline T& dereference() { return **this; }
-  
-  inline pointer operator+(auto offset)  { return (uint8_t*)pointee() + sizeof(T) * offset; }
-  inline pointer operator-(auto offset)  { return (uint8_t*)pointee() - sizeof(T) * offset; }
-  inline pointer operator++()            { return *this = *this + 1;                        }
-  inline pointer operator++(auto)        { auto t = *this; *this = *this + 1; return t;     }
-  inline pointer operator+=(auto offset) { return (*this = *this + offset);                 }
-  inline pointer operator-=(auto offset) { return (*this = *this - offset);                 }
-  
-  // for use as keys in std::map
-  inline bool operator<(const pointer<T>& other) const { return ptr < other.ptr; }
-  inline bool operator>(const pointer<T>& other) const { return ptr > other.ptr; }
   
   template<typename S = T>
-  inline bool operator==(const pointer<S> other) { return ptr == other.ptr; }
-  inline operator bool() { return valid(); }
+  inline operator S*() const {
+    return pointee();
+  }
   
-  using underlying_type = T;
+  inline T* operator->() const {
+    if (!*this) throw BadPointer("bad pointer");
+    return pointee();
+  }
   
-  address ptr;
+  inline T& operator*() const {
+    if (!*this) throw BadPointer("bad pointer dereference");
+    return *static_cast<T*>(pointee());
+  }
+  
+  inline T& operator[](auto idx) {
+    if (!*this) throw BadPointer("array access into bad pointer");
+    return *(static_cast<T*>(pointee()) + idx);
+  }
+  
+  inline T& Dereference() const {
+    return **this;
+  }
+  
+  inline operator bool() const {
+    return bool(ptr);
+  }
+  
+  inline Address memoryOffset() { return &ptr; }
+  
+  inline Pointer operator+(auto offset)  { return (uint8_t*)pointee() + sizeof(T) * offset; }
+  inline Pointer operator-(auto offset)  { return (uint8_t*)pointee() - sizeof(T) * offset; }
+  inline Pointer operator++()            { return *this = *this + 1;                        }
+  inline Pointer operator++(auto)        { auto t = *this; *this = *this + 1; return t;     }
+  inline Pointer operator+=(auto offset) { return (*this = *this + offset);                 }
+  inline Pointer operator-=(auto offset) { return (*this = *this - offset);                 }
+  
+  // for use as keys in std::map
+  inline bool operator<(const Pointer<T>& other) const { return ptr < other.ptr; }
+  inline bool operator>(const Pointer<T>& other) const { return ptr > other.ptr; }
+  
+  template<typename S = T>
+  inline bool operator==(const Pointer<S> other) { return ptr == other.ptr; }
+  
+  
+  using UnderlyingType = T;
+  
+  Address ptr;
 };
 
 /// A string, zero-terminated unless size specified
-template<const size_t size = 0>
-struct string {
-  string() = default;
+template<const SizeType size = 0>
+struct String {
+  String() = default;
   static constexpr bool FixedSize { size != 0 };
   
-  constexpr size_t length() const {
+  constexpr size_t Length() const {
     if constexpr (FixedSize) {
       return size;
     } else {
@@ -398,14 +381,19 @@ struct string {
   }
   
   /// Return the offset of this string in target memory
-  inline address memoryOffset() { return &str; }
+  inline Address memoryOffset() { return &str; }
   /// Is the string bound to the address space of the target?
-  inline bool memoryBound() { return memory::memoryBound(str); }
+  inline bool memoryBound() { return MemoryBound(str); }
   /// Is the memory of the string writable?
-  inline bool writable() { return !memoryBound() ? true : !(memory::flags & CPA_MEMORY_READONLY); }
+  inline bool writable() { return !memoryBound() ? true : !(MemoryFlags & CPA_MEMORY_READONLY); }
   
-  inline operator std::string() { return std::string((char*)str, length()); }
-  inline operator const char*() { return reinterpret_cast<const char*>(str); }
+  inline operator std::string() {
+    if constexpr (FixedSize) return std::string(static_cast<char*>(str), Length());
+    else return str;
+  }
+  
+  inline const char* c_str() { return reinterpret_cast<char*>(&str); }
+  inline operator const char*() { return c_str(); }
   inline bool operator==(const char *str) { return std::string(str) == std::string(str); }
   inline bool operator==(std::string str) { return std::string(str) == std::string(str); }
   
@@ -413,62 +401,49 @@ private:
   std::conditional_t<FixedSize, char[size], std::string> str;
 };
 
-using allocator_function = std::function<void*(size_type sz)>;
-using deallocator_function = std::function<void(void*)>;
+using Allocator = std::function<void*(SizeType)>;
+using Deallocator = std::function<void(void*)>;
 // To be set by the user...
-CPA_EXTERN allocator_function alloc;
-CPA_EXTERN deallocator_function dealloc;
+extern Allocator Allocate;
+extern Deallocator Deallocate;
 
-struct allocable {
-  void* operator new (size_t sz) {
-    if (alloc)
-      return alloc(sz);
-    else
-      throw "allocator not set";
-  }
-  
-  void operator delete (void *p) {
-    if (dealloc)
-      dealloc(p);
-  }
-};
+#define CPA_ALLOCATOR_OP_NEW void* operator new(size_t sz) noexcept(false) { \
+  if (CPA::Memory::Allocate) return CPA::Memory::Allocate(sz); \
+  else throw "allocator not set"; \
+}
 
-using userdata_store = std::unordered_map<std::string, std::any>;
-CPA_EXTERN std::unordered_map<memory::target_address_type, userdata_store> userdata;
+#define CPA_ALLOCATOR_OP_DELETE void operator delete (void *p) noexcept(false) { \
+  if (CPA::Memory::Deallocate) CPA::Memory::Deallocate(p); \
+  else throw "deallocator not set"; \
+}
 
-}; /* memory */
+#define CPA_ALLOCATOR \
+  CPA_ALLOCATOR_OP_NEW \
+  CPA_ALLOCATOR_OP_DELETE
 
-using char8   = memory::type<int8_t, int8_t>;
-using uchar8  = memory::type<uint8_t, uint8_t>;
-using int8    = memory::type<int8_t, int8_t>;
-using uint8   = memory::type<uint8_t, uint8_t>;
-using int16   = memory::type<int16_t, int16_t>;
-using uint16  = memory::type<uint16_t, uint16_t>;
-using int32   = memory::type<int32_t, int32_t>;
-using uint32  = memory::type<uint32_t, uint32_t>;
-using int64   = memory::type<int64_t, int64_t>;
-using uint64  = memory::type<uint64_t, uint64_t>;
-using float32 = memory::type<uint32_t, float>;
+}; /* Memory */
 
-/// A pointer
-template<typename T = memory::address>
-using pointer = memory::pointer<T>;
+using char8   = Memory::Type<int8_t, int8_t>;
+using uchar8  = Memory::Type<uint8_t, uint8_t>;
+using int8    = Memory::Type<int8_t, int8_t>;
+using uint8   = Memory::Type<uint8_t, uint8_t>;
+using int16   = Memory::Type<int16_t, int16_t>;
+using uint16  = Memory::Type<uint16_t, uint16_t>;
+using int32   = Memory::Type<int32_t, int32_t>;
+using uint32  = Memory::Type<uint32_t, uint32_t>;
+using int64   = Memory::Type<int64_t, int64_t>;
+using uint64  = Memory::Type<uint64_t, uint64_t>;
+using float32 = Memory::Type<uint32_t, float>;
 
-/// A pointer to a pointer
-template<typename T = memory::address>
-using doublepointer = pointer<pointer<T>>;
-
-/// A pointer exception
-using bad_pointer = memory::bad_pointer;
-
-/// A string, zero-terminated unless size specified
-template<const size_t size = 0>
-using string = memory::string<size>;
+using bad_pointer = Memory::BadPointer;
+template<typename T = Memory::Address> using pointer = Memory::Pointer<T>;
+template<typename T = Memory::Address> using doublepointer = pointer<pointer<T>>;
+template<Memory::SizeType Size = 0ull> using string = Memory::String<Size>;
 
 
 #pragma mark - Structure -
 
-// namespace Common {
+//namespace GAM {
 struct stEngineStructure;
 struct stEngineTimer;
 struct stLanguageStructure;
@@ -480,7 +455,7 @@ struct stStandardGameInfo;
 struct st3DData;
 struct stCollideSet;
 struct stAnim3D;
-// }
+//}
 
 namespace MTH {
 template<unsigned N, typename T = float32> struct vector;
@@ -494,6 +469,12 @@ using stMatrix3D = matrix<3, 3, float32>;
 using stMatrix4D = matrix<4, 4, float32>;
 #endif
 };
+
+#if engine == ENGINE_VERSION_R3
+namespace MAT {
+struct stTransformation;
+}
+#endif
 
 /// Input module
 namespace IPT {
@@ -537,7 +518,14 @@ namespace IPO {
 struct stInstantiatedPhysicalObject;
 }
 
-/// Intelligence module
+/// ISI
+namespace ISI {
+struct stLOD;
+struct stISI;
+struct stColor;
+}
+
+/// AI module
 namespace AI {
 struct stBrain;
 struct stMind;
@@ -602,7 +590,6 @@ struct stCollideElementAlignedBoxes;
 struct stGVForCollision;
 struct stBoundingSphere;
 struct stParallelBox;
-enum ElementType : int;
 }
 
 /// Geometry module
@@ -613,7 +600,6 @@ struct stVisualElementIndexedTriangles;
 struct stColor;
 struct stParallelBox;
 union uVisualObject;
-enum ElementType : int;
 }
 
 /// Geometry morphing module
@@ -667,7 +653,11 @@ struct stEventParametersExtraAll;
 union stEventParameters;
 };
 
-#pragma mark ---
+#pragma mark -*-
+
+/*************************/
+/** ``STRUCTURE BEGIN`` **/
+/*************************/
 
 using Index3D = uint16;
 
@@ -678,26 +668,6 @@ using Index3D = uint16;
 
 #pragma pack(push, 1)
 
-/*************************/
-/** ``STRUCTURE BEGIN`` **/
-/*************************/
-
-struct structure: memory::allocable {
-  template<typename T>
-  void setUserData(std::string key, T value) {
-    memory::target_address_type addr = pointer<>(this).pointeeAddress().effectiveAddress();
-    memory::userdata_store& map = memory::userdata[addr];
-    map[key] = std::make_any<T>(value);
-  }
-  
-  template<typename T>
-  T getUserData(std::string key) {
-    memory::target_address_type addr = pointer<>(this).pointeeAddress().effectiveAddress();
-    memory::userdata_store& map = memory::userdata[addr];
-    return std::any_cast<T>(map[key]);
-  }
-};
-
 #pragma mark - MTH -
 
 template<unsigned N, typename T>
@@ -706,7 +676,13 @@ struct MTH::vector {
   template<typename... Args, std::enable_if_t<sizeof...(Args) == N && sizeof...(Args) != 1 && std::conjunction_v<std::is_convertible<Args, float>...>>* = nullptr>
   vector(Args... args) : data { static_cast<float>(args)... } { /* ... */ }
   template<unsigned N2> vector(std::array<float32, N2>& vec) { for (auto i : range(N)) data[i] = vec[i]; }
-  vector() { /* ... */}
+  vector() { /* ... */ }
+  
+  template<typename S>
+  vector(const MTH::vector<N, S>& other) {
+    for (int i = 0; i < N; i++)
+      data[i] = other.data[i];
+  }
   
   inline auto dot(vector<N> v) const {
     float s = 0.0f;
@@ -731,7 +707,7 @@ struct MTH::vector {
     return result;
   }
   
-  auto normalize() {
+  auto normalize() const {
     vector result = *this;
     if(length() == 0) return result;
     float scale = 1.0f / length();
@@ -739,39 +715,39 @@ struct MTH::vector {
     return result;
   }
   
-  inline auto isNullVector() -> bool {
-    return x() == 0 && y() == 0 && z() == 0;
-  }
-  
-  //access
   inline T& x() { return data[0]; }
   inline T& y() { return data[1]; }
   inline T& z() { return data[2]; }
   inline T& w() { return data[3]; }
+  inline T& operator[](int i) const { return *(T*)(&data[i]); }
+//  inline const T& operator[](int i) const { return data[i]; }
+  
   inline vector<2> xy() { return vector<2>(x(), y()); }
   inline vector<3> xyz() { return vector<3>(x(), y(), z()); }
-  inline auto& operator[](auto i) { return data[i]; }
-  //op
-  auto operator +(vector v) { vector result; for(auto i : range(N)) result[i] = data[i] + v[i]; return result; }
-  auto operator -(vector v) { vector result; for(auto i : range(N)) result[i] = data[i] - v[i]; return result; }
-  auto operator *(vector v) { vector result; for(auto i : range(N)) result[i] = data[i] * v[i]; return result; }
-  auto operator /(vector v) { vector result; for(auto i : range(N)) result[i] = data[i] / v[i]; return result; }
-  auto operator *(auto   s) { vector result; for(auto i : range(N)) result[i] = data[i] *    s; return result; }
-  auto operator /(auto   s) { vector result; for(auto i : range(N)) result[i] = data[i] /    s; return result; }
-  auto operator -()         { vector result; for(auto i : range(N)) result[i] =-data[i];        return result; }
-  auto operator >(vector v) { bool result = true; for(auto i : range(N)) if (data[i] <= v[i]) result = false; return result; }
-  auto operator <(vector v) { bool result = true; for(auto i : range(N)) if (data[i] >= v[i]) result = false; return result; }
-  auto operator>=(vector v) { bool result = true; for(auto i : range(N)) if (data[i] <  v[i]) result = false; return result; }
-  auto operator<=(vector v) { bool result = true; for(auto i : range(N)) if (data[i] >  v[i]) result = false; return result; }
-  auto operator==(vector v) { bool result = true; for(auto i : range(N)) if (data[i] != v[i]) result = false; return result; }
-  auto operator!=(vector v) { return !(*this == v); }
   
-  auto operator +=(vector v) { for(auto i : range(N)) data[i] = data[i] + v[i]; }
-  auto operator -=(vector v) { for(auto i : range(N)) data[i] = data[i] - v[i]; }
-  auto operator *=(vector v) { for(auto i : range(N)) data[i] = data[i] * v[i]; }
-  auto operator /=(vector v) { for(auto i : range(N)) data[i] = data[i] / v[i]; }
+  vector operator +(const vector& v) const { vector result; for (int i = 0; i < N; ++i) result[i] = data[i] + v[i]; return result; }
+  vector operator -(const vector& v) const { vector result; for (int i = 0; i < N; ++i) result[i] = data[i] - v[i]; return result; }
+  vector operator *(const vector& v) const { vector result; for (int i = 0; i < N; ++i) result[i] = data[i] * v[i]; return result; }
+  vector operator /(const vector& v) const { vector result; for (int i = 0; i < N; ++i) result[i] = data[i] / v[i]; return result; }
+  vector operator *(const auto&   s) const { vector result; for (int i = 0; i < N; ++i) result[i] = data[i] *    s; return result; }
+  vector operator /(const auto&   s) const { vector result; for (int i = 0; i < N; ++i) result[i] = data[i] /    s; return result; }
+  vector operator -() const         { vector result; for (int i = 0; i < N; ++i) result[i] =-data[i];        return result; }
   
-private:
+  bool operator >(vector v) { bool result = true; for (int i = 0; i < N; ++i) if (data[i] <= v[i]) result = false; return result; }
+  bool operator <(vector v) { bool result = true; for (int i = 0; i < N; ++i) if (data[i] >= v[i]) result = false; return result; }
+  bool operator>=(vector v) { bool result = true; for (int i = 0; i < N; ++i) if (data[i] <  v[i]) result = false; return result; }
+  bool operator<=(vector v) { bool result = true; for (int i = 0; i < N; ++i) if (data[i] >  v[i]) result = false; return result; }
+  bool operator==(vector v) { bool result = true; for (int i = 0; i < N; ++i) if (data[i] != v[i]) result = false; return result; }
+  bool operator!=(vector v) { return !(*this == v); }
+  
+  auto operator+=(vector v) { for(auto i : range(N)) data[i] = data[i] + v[i]; }
+  auto operator-=(vector v) { for(auto i : range(N)) data[i] = data[i] - v[i]; }
+  auto operator*=(vector v) { for(auto i : range(N)) data[i] = data[i] * v[i]; }
+  auto operator/=(vector v) { for(auto i : range(N)) data[i] = data[i] / v[i]; }
+  
+  CPA_ALLOCATOR
+  
+//private:
   std::array<T, N> data;
 };
 
@@ -783,20 +759,24 @@ struct MTH::matrix {
         (*this)(x, y) = (y == x ? 1.0f : 0.0f);
       }
     }
-  };
+  }
+  
+  template<typename S>
+  matrix(const MTH::matrix<Rows, Columns, S>& other) {
+    for (int i = 0; i < Rows*Columns; i++)
+      m[i] = other.m[i];
+  }
   
   static constexpr matrix identity() {
     matrix result;
-    for (auto y : range(Rows)) {
-      for (auto x : range(Columns)) {
+    for (auto y : range(Rows))
+      for (auto x : range(Columns))
         result(x, y) = (y == x ? 1.0f : 0.0f);
-      }
-    }
     return result;
   }
   
-  inline auto operator()(auto row, auto col) -> T& {
-    return m[col + row * Columns];
+  inline T& operator()(auto row, auto col) const {
+    return *(T*)&m[col + row * Columns];
   }
   
   inline auto operator[](auto index) -> T& {
@@ -804,7 +784,7 @@ struct MTH::matrix {
   }
   
   template <unsigned R, unsigned C>
-  auto operator*(matrix<R, C, T> src) {
+  auto operator*(matrix<R, C, T> src) const {
     static_assert(Columns == C);
     matrix<Rows, Columns, T> result;
     for (auto y : range(Rows)) {
@@ -824,7 +804,7 @@ struct MTH::matrix {
     return (*this = *this * m);
   }
   
-  auto operator*(MTH::stVector4D v) -> MTH::stVector4D {
+  MTH::stVector4D operator*(MTH::stVector4D v) {
     MTH::stVector4D result;
     for (auto y : range(Rows)) {
       result[y] = 0.0f;
@@ -835,8 +815,16 @@ struct MTH::matrix {
     return result;
   }
   
-  auto operator*(MTH::stVector3D v) -> MTH::stVector4D {
+  MTH::stVector4D operator*(MTH::stVector3D v) {
     return ((*this) * MTH::stVector4D(v.x(), v.y(), v.z(), 1.0f));
+  }
+  
+  inline bool operator==(matrix other) {
+    bool eq = true;
+    for (auto y : range(Rows))
+      for (auto x : range(Columns))
+        if (float((*this)(x,y)) != float(other(x,y))) eq = false;
+    return eq;
   }
   
   static auto makeTranslation(MTH::stVector3D p) {
@@ -851,34 +839,34 @@ struct MTH::matrix {
     return result;
   }
   
-  static matrix makeRotationX(float radians) {
+  static matrix MakeRotationX(float radians) {
     matrix result = identity();
-    result(1,1) = cos(radians);
-    result(1,2) = sin(radians);
-    result(2,1) = -sin(radians);
-    result(2,2) = cos(radians);
+    result(1,1) = std::cos(radians);
+    result(1,2) = std::sin(radians);
+    result(2,1) = -std::sin(radians);
+    result(2,2) = std::cos(radians);
     return result;
   }
   
-  static matrix makeRotationY(float radians) {
+  static matrix MakeRotationY(float radians) {
     matrix result = identity();
-    result(0,0) = cos(radians);
-    result(0,2) = -sin(radians);
-    result(2,0) = sin(radians);
-    result(2,2) = cos(radians);
+    result(0,0) = std::cos(radians);
+    result(0,2) = -std::sin(radians);
+    result(2,0) = std::sin(radians);
+    result(2,2) = std::cos(radians);
     return result;
   }
   
-  static matrix makeRotationZ(float radians) {
+  static matrix MakeRotationZ(float radians) {
     matrix result = identity();
-    result(0,0) = cos(radians);
-    result(0,1) = sin(radians);
-    result(1,0) = -sin(radians);
-    result(1,1) = cos(radians);
+    result(0,0) = std::cos(radians);
+    result(0,1) = std::sin(radians);
+    result(1,0) = -std::sin(radians);
+    result(1,1) = std::cos(radians);
     return result;
   }
   
-  static auto makePerspective(float fovY, float aspect, float near, float far) {
+  static auto MakePerspective(float fovY, float aspect, float near, float far) {
     float ct = 1.0f / std::tan(fovY / 2.0f);
     matrix<4,4,T> result = identity();
     result(0,0) = ct / aspect;
@@ -890,7 +878,7 @@ struct MTH::matrix {
     return result;
   }
   
-  static auto makeLookAt(MTH::stVector3D eye, MTH::stVector3D center, MTH::stVector3D up) {
+  static auto MakeLookAt(MTH::stVector3D eye, MTH::stVector3D center, MTH::stVector3D up) {
     MTH::stVector3D n = (eye - center).normalize();
     MTH::stVector3D u = up.cross(n).normalize();
     MTH::stVector3D v = n.cross(u);
@@ -930,26 +918,26 @@ struct MTH::matrix {
     return result;
   }
   
-  auto inverse() -> matrix<4,4,T> {
+  matrix<4,4,T> inverse() {
     matrix<4,4,T> result;
     
-    float s0 = (*this)(0,0) * (*this)(1,1) - (*this)(1,0) * (*this)(0,1);
-    float s1 = (*this)(0,0) * (*this)(1,2) - (*this)(1,0) * (*this)(0,2);
-    float s2 = (*this)(0,0) * (*this)(1,3) - (*this)(1,0) * (*this)(0,3);
-    float s3 = (*this)(0,1) * (*this)(1,2) - (*this)(1,1) * (*this)(0,2);
-    float s4 = (*this)(0,1) * (*this)(1,3) - (*this)(1,1) * (*this)(0,3);
-    float s5 = (*this)(0,2) * (*this)(1,3) - (*this)(1,2) * (*this)(0,3);
-    float c5 = (*this)(2,2) * (*this)(3,3) - (*this)(3,2) * (*this)(2,3);
-    float c4 = (*this)(2,1) * (*this)(3,3) - (*this)(3,1) * (*this)(2,3);
-    float c3 = (*this)(2,1) * (*this)(3,2) - (*this)(3,1) * (*this)(2,2);
-    float c2 = (*this)(2,0) * (*this)(3,3) - (*this)(3,0) * (*this)(2,3);
-    float c1 = (*this)(2,0) * (*this)(3,2) - (*this)(3,0) * (*this)(2,2);
-    float c0 = (*this)(2,0) * (*this)(3,1) - (*this)(3,0) * (*this)(2,1);
+    float const s0 = (*this)(0,0) * (*this)(1,1) - (*this)(1,0) * (*this)(0,1);
+    float const s1 = (*this)(0,0) * (*this)(1,2) - (*this)(1,0) * (*this)(0,2);
+    float const s2 = (*this)(0,0) * (*this)(1,3) - (*this)(1,0) * (*this)(0,3);
+    float const s3 = (*this)(0,1) * (*this)(1,2) - (*this)(1,1) * (*this)(0,2);
+    float const s4 = (*this)(0,1) * (*this)(1,3) - (*this)(1,1) * (*this)(0,3);
+    float const s5 = (*this)(0,2) * (*this)(1,3) - (*this)(1,2) * (*this)(0,3);
+    float const c5 = (*this)(2,2) * (*this)(3,3) - (*this)(3,2) * (*this)(2,3);
+    float const c4 = (*this)(2,1) * (*this)(3,3) - (*this)(3,1) * (*this)(2,3);
+    float const c3 = (*this)(2,1) * (*this)(3,2) - (*this)(3,1) * (*this)(2,2);
+    float const c2 = (*this)(2,0) * (*this)(3,3) - (*this)(3,0) * (*this)(2,3);
+    float const c1 = (*this)(2,0) * (*this)(3,2) - (*this)(3,0) * (*this)(2,2);
+    float const c0 = (*this)(2,0) * (*this)(3,1) - (*this)(3,0) * (*this)(2,1);
     
     float const det = (s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0);
     float const invdet = 1.0f / det;
     
-    if (det == 0.0f) throw "non-invertible matrix";
+    assert(det != 0.0f); // Non-invertible
     
     result(0,0) = ( (*this)(1,1) * c5 - (*this)(1,2) * c4 + (*this)(1,3) * c3) * invdet;
     result(0,1) = (-(*this)(0,1) * c5 + (*this)(0,2) * c4 - (*this)(0,3) * c3) * invdet;
@@ -971,14 +959,16 @@ struct MTH::matrix {
     return result;
   }
   
-  inline auto translation() -> MTH::stVector3D& {
+  MTH::stVector3D& translation() {
     return *(MTH::stVector3D*)&(*this)(Rows-1,0);
   }
   
-  inline auto scale(bool ref = false) {
-    if (ref) return vector<3, float32*>(&(*this)(0,0), &(*this)(1,1), &(*this)(2,2));
-    return MTH::stVector3D((*this)(0,0), (*this)(1,1), (*this)(2,2));
-  }
+//  inline auto scale(bool ref = false) {
+//    if (ref) return vector<3, float32*>(&(*this)(0,0), &(*this)(1,1), &(*this)(2,2));
+//    return MTH::stVector3D((*this)(0,0), (*this)(1,1), (*this)(2,2));
+//  }
+  
+  CPA_ALLOCATOR
   
   std::array<T, Rows * Columns> m;
 };
@@ -997,16 +987,9 @@ struct LinkedList {
   std::conditional_t<K == LinkedListType::Single, pointer<T>, std::monostate> last;
   int32 numEntries;
   
-  template<typename F> void forEach(const F& f, void *userdata = nullptr) {
-    //pointer<T> c = first;
-//    for (auto i : range(numEntries)) {
-//      f(first+i, userdata);
-//    }
-    try {
-      for (T *c = first; c; c = c->next) {
-        f(c, userdata);
-      }
-    } catch (...) {}
+  template<typename F> void forEach(const F& f, void *userdata = nullptr) const {
+    pointer<T> ii = first;
+    while (ii) { f(ii, userdata); ii = ii->next; }
   }
   
   struct iterator {
@@ -1020,6 +1003,8 @@ struct LinkedList {
   
   auto begin() -> iterator { return first; }
   auto end() -> iterator { return last; }
+  
+  CPA_ALLOCATOR
 };
 
 template<typename T = uint32> using stSingleLinkedList = LinkedList<T, LinkedListType::Single>;
@@ -1032,136 +1017,79 @@ struct LinkedListElement {
   pointer<LinkedListElement> next;
   pointer<LinkedListElement> prev;
   pointer<stLinkedList<>> list;
+  CPA_ALLOCATOR
 };
 
-#pragma mark - stTransform
+#pragma mark - stTransformation
+
+#define MAT_TransformationType_Uninitialized         0
+#define MAT_TransformationType_Identity              1
+#define MAT_TransformationType_Translate             2
+#define MAT_TransformationType_Zoom                  3
+#define MAT_TransformationType_Scale                 4
+#define MAT_TransformationType_Rotation              5
+#define MAT_TransformationType_RotationZoom          6
+#define MAT_TransformationType_RotationScale         7
+#define MAT_TransformationType_ComplexRotationScale  8
+#define MAT_TransformationType_Undefined             9
 
 /// World transform
-struct stTransform: structure {
-  enum Type {
-    Uninitialized = 0,
-    Identity = 1,
-    Translate = 2,
-    Zoom = 3,
-    Scale = 4,
-    Rotation = 5,
-    RotationZoom = 6,
-    RotationScale = 7,
-    ComplexRotationScale = 8,
-    Undefined = 9,
-  };
+struct MAT::stTransformation {
+  stTransformation() = default;
+  stTransformation(uint32 type, MTH::stMatrix4D T, MTH::stVector4D scale = 1.0f);
   
-  stTransform() = default;
-  stTransform(uint32 _type, MTH::stMatrix4D T = MTH::stMatrix4D(), MTH::stVector4D _scale = MTH::stVector4D(1.0f, 1.0f, 1.0f, 1.0f)) : type(_type), matrix(T), scale(_scale) { /* ... */ }
-  
-  /// Type of the transform
-  uint32 type = Type::Uninitialized;
+  /// Type of transformation
+  uint32 type = MAT_TransformationType_Identity;
   /// Transform matrix
   MTH::stMatrix4D matrix = MTH::stMatrix4D::identity();
   /// Scale parameter
   MTH::stVector4D scale;
   
+  /// Name of the transformation type
+  const std::string TypeName() const;
   /// Translation vector
-  auto translation() -> MTH::stVector3D& {
-    return matrix.translation();
-  }
+  MTH::stVector3D& Translation();
+  /// Scale vector
+  MTH::stVector3D Scale();
+  /// Get the inverse of the transformation
+  stTransformation Inverse();
+  /// Rotate a vector
+  MTH::stVector3D RotateVector(MTH::stVector3D v);
+  /// Get rotation vectors
+  bool GetRotation(MTH::stVector3D& I, MTH::stVector3D& J, MTH::stVector3D& K);
   
-  /// Get rotation vectors if the type is `transformTypeRotation`
-  auto getRotation(MTH::stVector3D& i, MTH::stVector3D& j, MTH::stVector3D& k) -> bool {
-    if (static_cast<uint32_t>(type) == Type::Rotation) {
-      i = *(MTH::stVector3D*)&matrix(0,0);
-      j = *(MTH::stVector3D*)&matrix(1,0);
-      k = *(MTH::stVector3D*)&matrix(2,0);
-      return true;
-    } else {
-      return false;
-    }
-  }
+  MTH::stVector3D operator*(MTH::stVector3D);
+  MTH::stVector4D operator*(MTH::stVector4D);
+  stTransformation operator*(MAT::stTransformation);
   
-  auto operator*(MTH::stVector3D v) -> MTH::stVector3D {
-    return (matrix * MTH::stVector4D(v.x(), v.y(), v.z(), 1.0f)).xyz();
-  }
-  
-  auto operator*(MTH::stVector4D v) -> MTH::stVector4D {
-    return matrix * v;
-  }
-  
-  auto operator*(stTransform other) -> stTransform {
-    // TODO: Also transform the scale here?
-    stTransform T(type, matrix * other.matrix, scale);
-    return T;
-  }
-  
-  auto inverse() -> stTransform {
-    // TODO: Also transform the scale here?
-    stTransform T(type, matrix.inverse(), scale);
-    return T;
-  }
-  
-  auto rotateVector(MTH::stVector3D v) -> MTH::stVector3D {
-    uint32_t type = this->type;
-    if (type == Rotation) {
-      return *this * v;
-    } else if (type < Rotation) {
-      return v;
-    } else {
-      // TODO
-      return *this * v;
-    }
-  }
-  
-  inline auto typeName() -> std::string {
-    switch (static_cast<uint32_t>(type)) {
-      case Uninitialized:
-        return "Uninitialized";
-      case Identity:
-        return "Identity";
-      case Translate:
-        return "Translate";
-      case Zoom:
-        return "Zoom";
-      case Scale:
-        return "Scale";
-      case Rotation:
-        return "Rotation";
-      case RotationZoom:
-        return "RotationZoom";
-      case RotationScale:
-        return "RotationScale";
-      case ComplexRotationScale:
-        return "ComplexRotationScale";
-      case Undefined:
-        return "Undefined";
-      default:
-        return "Invalid";
-    }
-  }
+  CPA_ALLOCATOR
 };
 
-struct stAlwaysModelList: structure {
+struct stAlwaysModelList {
   pointer<stAlwaysModelList> next;
   pointer<stAlwaysModelList> prev;
   pointer<stLinkedList<stAlwaysModelList>> parentList;
   int32 objectModelType;
   pointer<stEngineObject> alwaysObject;
+  
+  CPA_ALLOCATOR
 };
 
-struct stAlways: structure {
+struct stAlways {
   uint32 numAlways;
   stDoublyLinkedList<stAlwaysModelList> alwaysModels;
   pointer<stSuperObject> alwaysSuperobject;
   pointer<stEngineObject> alwaysActors;
   pointer<stSuperObject> alwaysGeneratorSuperobjects;
+  CPA_ALLOCATOR
 };
 
-enum ObjectType {
-  Family = 0,
-  Model = 1,
-  Instance = 2
-};
+#define ObjectType_Family   0
+#define ObjectType_Model    1
+#define ObjectType_Instance 2
 
 /// Object identifier
-struct stObjectTypeElement: structure {
+struct stObjectTypeElement {
   /// Next object type element
   pointer<stObjectTypeElement> next;
   /// Previous object type element
@@ -1176,54 +1104,108 @@ struct stObjectTypeElement: structure {
   uint8 identifier;
   /// Padding
   padding(2)
+  
+  CPA_ALLOCATOR
 };
 
 /// Global object type table
-struct stObjectType: structure {
+struct stObjectType {
   /// Family object types
-  stDoublyLinkedList<stObjectTypeElement> family;
+  stDoublyLinkedList<stObjectTypeElement> familyList;
   /// Model object types
-  stDoublyLinkedList<stObjectTypeElement> model;
+  stDoublyLinkedList<stObjectTypeElement> modelList;
   /// Instance object types
-  stDoublyLinkedList<stObjectTypeElement> instance;
+  stDoublyLinkedList<stObjectTypeElement> instanceList;
+  
+  void LoadCache();
+  void UnloadCache();
+  /// Look up a name with a type (`ObjectType_...`) and index
+  const std::string LookupName(int type, int index);
+  
+  CPA_ALLOCATOR
 };
 
 #pragma mark - 3DData
 
-struct stState: structure {
+struct stState {
   string<0x50> name;
   pointer<stState> next;
   pointer<stState> prev;
   pointer</**/> parentList;
   pointer<stAnim3D> animation;
+  CPA_ALLOCATOR
 };
 
-struct st3DData: structure {
+struct stSubAnim {
+  pointer<stAnim3D> subAnim;
+  CPA_ALLOCATOR
+};
+
+struct st3DData {
   pointer<> initialState;
   pointer<> currentState;
   pointer<> firstStateOfAction;
   pointer<> initialObjectsTable;
   pointer<> currentObjectsTable;
   pointer<> family;
+  CPA_ALLOCATOR
 };
 
-struct stFamilyList: structure {
+#define ObjectTableType_PhysicalObject  0
+#define ObjectTableType_Animation       1
+#define ObjectTableType_Light           2
+#define ObjectTableType_Camera          3
+#define ObjectTableType_Mirror          4
+#define ObjectTableType_Event           5
+
+struct stObjectTableElement {
+  pointer<MTH::stVector3D> scale;
+  pointer<PO::stPhysicalObject> object;
+  uint32 channelNumber;
+  uint16 type;
+  uint8 unknown;
+  uint8 intensity;
+  uint8 expression;
+  padding(3)
+  
+  const std::string TypeName();
+};
+
+struct stObjectTable {
+  pointer<stObjectTable> next;
+  pointer<stObjectTable> prev;
+  pointer<> _;
+//  LinkedList<> a; // not correct
+  pointer<stObjectTableElement> current;
+  pointer<stObjectTableElement> initial;
+  uint16 numElements;
+  uint16 numUsedZdx;
+};
+
+/// Global list of object families and
+struct stFamilyList {
   pointer<stFamilyList> next;
   pointer<stFamilyList> prev;
   pointer<LinkedListElement<stFamilyList>> list;
   int32 objectFamilyType;
+  LinkedList<stState> states;
+  LinkedList<stSubAnim> subAnims;
+  pointer<stObjectTable> defaultObjectTable;
+  LinkedList<stObjectTable> objectTables;
+  CPA_ALLOCATOR
 };
 
 #pragma mark - Engine
 
 /// High-resolution counter
-struct stTimerCount: structure {
+struct stTimerCount {
   uint32 low;
   uint32 high;
+  CPA_ALLOCATOR
 };
 
 /// Global engine timer
-struct stEngineTimer: structure {
+struct stEngineTimer {
   /// Current frame of the level
   uint32 currentFrame;
   /// Internal timer ID handle
@@ -1244,7 +1226,8 @@ struct stEngineTimer: structure {
   /// Total time the game was paused
   stTimerCount totalPauseTime;
   /// Number of ticks per millisecond
-  uint32 ticksPerMs;
+  uint32 ticksPerMillisecond;
+  CPA_ALLOCATOR
 };
 
 enum EngineMode {
@@ -1264,7 +1247,11 @@ enum InputMode {
 };
 
 /// Engine structure
-struct stEngineStructure: structure {
+struct stEngineStructure {
+  stEngineStructure() {
+    mode = EngineMode::Initialize;
+  }
+  
   /// Engine mode
   uint8 mode;
   /// Current level name
@@ -1304,8 +1291,8 @@ struct stEngineStructure: structure {
   pointer<stSuperObject> debugCamera;
   pointer<> languageStructure;
   pointer<> levelFilenameList;
-  stTransform mainActorTransform;
-  stTransform mainCameraTransform;
+  MAT::stTransformation mainActorTransform;
+  MAT::stTransformation mainCameraTransform;
   int32 submapNumber;
   
   uint8 paused;
@@ -1348,14 +1335,16 @@ struct stEngineStructure: structure {
   pointer<CINE::stCineManager> cineManager;
   
   /// Load level by name
-  inline auto loadLevel(std::string levelName) -> void;
+  void LoadLevel(const std::string& levelName);
+  
+  CPA_ALLOCATOR
 };
 
 
 #pragma mark - IPT -
 
 /// Structure for ReadAnalogJoystick function
-struct IPT::stPadReadingOutput: structure {
+struct IPT::stPadReadingOutput {
   /// The world vector the joystick value translates to
   MTH::stVector3D globalVector;
   int16 horizontalAxis;
@@ -1365,9 +1354,10 @@ struct IPT::stPadReadingOutput: structure {
   float32 rotationAngle;
   /// Strafe sector (0-7 clockwise)
   int32 strafeSector;
+  CPA_ALLOCATOR
 };
 
-struct IPT::stInputDevice: structure {
+struct IPT::stInputDevice {
   uint8 valid;
   padding(3)
   pointer<> handle;
@@ -1393,9 +1383,10 @@ struct IPT::stInputDevice: structure {
   pointer<stInputEntryElement> joyButton[16];
   pointer<stInputEntryElement> keyButton[16];
   stPadReadingOutput padReadOutput;
+  CPA_ALLOCATOR
 };
 
-struct IPT::stInputEntryElement: structure {
+struct IPT::stInputEntryElement {
   padding(6 * 4) /* ? */
   uint32 numKeywords;
   pointer<> keywordArray;
@@ -1405,9 +1396,10 @@ struct IPT::stInputEntryElement: structure {
   float32 analogValue;
   int8 active;
   padding(3)
+  CPA_ALLOCATOR
 };
 
-struct IPT::stInputStructure: structure {
+struct IPT::stInputStructure {
   uint8 onePadActivate;
   padding(3)
   stInputDevice device[18];
@@ -1432,6 +1424,7 @@ struct IPT::stInputStructure: structure {
   pointer<> searchedCommand;
   pointer<stInputEntryElement> commandModeEntrySwap;
   pointer<stInputEntryElement> commandModeEntryClear;
+  CPA_ALLOCATOR
 };
 
 #pragma mark - RND -
@@ -1440,7 +1433,7 @@ struct IPT::stInputStructure: structure {
 #define RND_TableCount 0x2710
 #define RND_DefaultIndex 0x0000
 
-struct RND::stRandom: structure {
+struct RND::stRandom {
   /// Size of the table
   uint32 tableSize;
   /// Indices into the table
@@ -1455,23 +1448,25 @@ struct RND::stRandom: structure {
   pointer<uint32> table;
   
   /// Index the random number table by absolute offset
-  int32_t index(unsigned i) {
+  int32_t Index(unsigned i) {
     uint32_t* T = table;
     return T ? ((T[i % RND_TableCount] >> 16) & 0x7FFF) : 0;
   }
   
   /// Index the random number table using an index from tableIndices, optionally offset
-  int32_t indexRelative(unsigned TableIndicesIdx, unsigned Offset) {
-    return index(uint32_t(tableIndices[TableIndicesIdx]) + Offset);
+  int32_t IndexRelative(unsigned TableIndicesIdx, unsigned Offset) {
+    return Index(uint32_t(tableIndices[TableIndicesIdx]) + Offset);
   }
   
   /// Simulate `Count` calls into the RND table, bounding the value by `Min` and `Max`
   int32_t call(unsigned const Count, unsigned const Min, unsigned const Max, unsigned const Index = RND_DefaultIndex) {
     int32_t n, v = 0;
     for (n = 0; n < Count; n++)
-      v = (Min + ((Max + 1 - Min) * indexRelative(Index, n)) / (tableMax + 1));
+      v = (Min + ((Max + 1 - Min) * IndexRelative(Index, n)) / (tableMax + 1));
     return v;
   }
+  
+  CPA_ALLOCATOR
 };
 
 #pragma mark - 3D
@@ -1487,7 +1482,7 @@ union uEventData {
   doublepointer<SND::stBlockEvent> soundEvent;
 };
 
-struct stEventInTable: structure {
+struct stEventInTable {
   uint32 unknown;
   /// Event-specific data
   uEventData eventData;
@@ -1499,9 +1494,10 @@ struct stEventInTable: structure {
   uint32 semaphoreID;
   
   uint32 unknown2;
+  CPA_ALLOCATOR
 };
   
-struct stEvent: structure {
+struct stEvent {
   /// Pointer to the event in the global event table.
   pointer<stEventInTable> eventInTable;
   /// Index of this element in the global event table.
@@ -1510,9 +1506,10 @@ struct stEvent: structure {
   uint16 channelNumber;
   uint16 isLocalized;
   //pointer<stEventInTable> eventInTable2;
+  CPA_ALLOCATOR
 };
 
-struct stAnim3D: structure {
+struct stAnim3D {
   /// The filename of this animation
   string<0x50> name;
   /// Number of frames in this animation
@@ -1529,13 +1526,10 @@ struct stAnim3D: structure {
   uint8 numEvents;
   ///
   uint8 mergeAnimationFlag;
+  CPA_ALLOCATOR
 };
 
-struct stSubAnim: structure {
-  pointer<stAnim3D> subAnim;
-};
-
-struct stActiveSubAnim: structure {
+struct stActiveSubAnim {
   pointer<stActiveSubAnim> next;
   pointer<stActiveSubAnim> prev;
   stDoublyLinkedList<stActiveSubAnim> parent;
@@ -1549,13 +1543,14 @@ struct stActiveSubAnim: structure {
   uint8 stop;
   uint8 merge;
   padding(1);
+  CPA_ALLOCATOR
 };
 
 
 #pragma mark - CINE -
 
 /// Actor state in a cinematic
-struct CINE::stCineActor: structure {
+struct CINE::stCineActor {
   stSubAnim subAnim;
   pointer<stActiveSubAnim> activeSubAnim;
   string<255> animationName;
@@ -1611,10 +1606,11 @@ struct CINE::stCineActor: structure {
   pointer<stCineActor> next;
   pointer<stCineActor> prev;
   pointer<stDoublyLinkedList<stCineActor>> parents;
+  CPA_ALLOCATOR
 };
 
 /// A cinematic
-struct CINE::stCine: structure {
+struct CINE::stCine {
   /// Actors controlling the cinematic
   stDoublyLinkedList<stCineActor> actors;
   /// Next cinematic in this list
@@ -1631,10 +1627,11 @@ struct CINE::stCine: structure {
   uint32 event;
   /// Name of the cinematic
   string<255> name;
+  CPA_ALLOCATOR
 };
 
 /// Cinematics state manager
-struct CINE::stCineManager: structure {
+struct CINE::stCineManager {
   /// List of level cinematics
   stDoublyLinkedList<stCine> cineList;
   /// Padding
@@ -1642,13 +1639,14 @@ struct CINE::stCineManager: structure {
   padding(4)
 #endif
   /// Force camera transform
-  stTransform fixedCameraTransform;
+  MAT::stTransformation fixedCameraTransform;
   /// Padding
 #if platform == PS2
   padding(2)
 #endif
   /// Currently active cutscene camera
   pointer<stSuperObject> activeCamera;
+  CPA_ALLOCATOR
 };
 
 
@@ -1730,22 +1728,24 @@ enum DNM::ObstacleType : unsigned {
 };
   
 /// Axis-angle
-struct DNM::stDynamicsRotation: structure {
+struct DNM::stDynamicsRotation {
   float32 angle;
   MTH::stVector3D axis;
+  CPA_ALLOCATOR
 };
 
 /// Dynamics base block
-struct DNM::stDynamicsBaseBlock: structure {
+struct DNM::stDynamicsBaseBlock {
   /// Type of the object
   int32 objectType;
   /// Current mechanics ID card
-  pointer<> idcard;
-  /// Mechanics control flags
+  pointer<> IDCard;
+  /// Flags which control the current physics state of the actor. (`DNM_Flag_...`)
   uint32 flags;
-  /// Mechanics info/verification flags
+  /// Info/verification flags. These are used internally by the mechanics engine
+  /// to determine how the control flags should be applied. (`DNM_EndFlag_...`)
   uint32 endFlags;
-  /// Gravity
+  /// The current gravity factor (default is 9.81f)
   float32 gravity;
   /// Slope limit (1.0f)
   float32 slopeLimit;
@@ -1755,55 +1755,68 @@ struct DNM::stDynamicsBaseBlock: structure {
   float32 slide;
   /// Rebound factor
   float32 rebound;
-  /// Impose absolute speed (after inertia and gravity calculations)
+  /// Impose absolute speed (applied after inertia and gravity calculations)
+  /// For this to work, one of the `DNM_Flag_SpeedImpose...` flags must be set.
   MTH::stVector3D imposeSpeed;
-  /// Propose speed (before inertia and gravity calculations)
+  /// Propose speed (applied before inertia and gravity calculations)
+  /// For this to work, one of the `DNM_Flag_SpeedPropose...` flags must be set.
   MTH::stVector3D proposeSpeed;
-  /// Previous speed
+  /// The speed determined by the previous call to the dynamics.
+  /// This is the current speed for any particular frame.
   MTH::stVector3D previousSpeed;
-  /// Actor scale
+  /// Scale factor by which to multiply scale-based physics parameters
   MTH::stVector3D scale;
-  /// Animation-specific speed
-  MTH::stVector3D animationProposeSpeed;
-  /// Previous safe translation
+  /// Speed which is specific to a particular animation state.
+  /// Applied before inertia and gravity calculations.
+  MTH::stVector3D animationSpeed;
+  /// Previous safe translation point
   MTH::stVector3D safeTranslation;
   /// Additional translation
   MTH::stVector3D addTranslation;
   
 #if engine == R3 && platform == GCN
-  /// Padding
   padding(8)
 #endif
   
-  /// Previous transform
-  stTransform previousTransform;
-  /// Current transform
-  stTransform currentTransform;
+  /// The previous transformation.
+  MAT::stTransformation previousTransform;
+  /// The current transformation.
+  MAT::stTransformation currentTransform;
   /// Impose absolute rotation
   MTH::stMatrix3D imposedRotation;
   /// Previous number of frames
   uint8 numFrames;
-  /// Padding
+  
   padding(3)
-  /// Collision report copied from mechanics
+  /// Collision report, copied from the mechanics at the end of a dynamics frame.
   pointer<stDynamicsReport> report;
   
 #if engine == R3 && platform == PS2
   /// Padding
   padding(8)
 #endif
+  
+  CPA_ALLOCATOR
 };
 
 /// Dynamics advanced block
-struct DNM::stDynamicsAdvancedBlock: structure {
-  /// Inertia (NOTE: originally component-separated)
-  MTH::stVector3D inertia;
+struct DNM::stDynamicsAdvancedBlock {
+  float32 xInertia;
+  float32 yInertia;
+  float32 zInertia;
+  
   /// Priority of stream
   float32 streamPriority;
   /// Stream effect factor
   float32 streamFactor;
-  /// Slide factor (NOTE: originally component-separated)
-  MTH::stVector3D slideFactor;
+  
+  /// Slide factor
+  float32 xSlideFactor;
+  float32 ySlideFactor;
+  float32 zSlideFactor;
+  
+  
+  
   /// Previous slide
   float32 previousSlide;
   /// Speed limit
@@ -1826,11 +1839,13 @@ struct DNM::stDynamicsAdvancedBlock: structure {
   int8 collideCount;
   /// Padding
   padding(3)
+  
+  CPA_ALLOCATOR
 };
 
 /// AI and DNM message-interchange:
 /// "Module Allowing the Communication of Datas from the Player or the Intelligence to the Dynamics"
-struct DNM::stMACDPID: structure {
+struct DNM::stMACDPID {
   float32 data0;
   MTH::stVector3D data1;
   MTH::stVector3D data2;
@@ -1847,10 +1862,12 @@ struct DNM::stMACDPID: structure {
   MTH::stVector3D data13;
   float32 data14;
   uint8 data15;
+  
+  CPA_ALLOCATOR
 };
 
 /// Dynamics complex block
-struct DNM::stDynamicsComplexBlock: structure {
+struct DNM::stDynamicsComplexBlock {
   float32 tiltStrength;
   float32 tiltInertia;
   float32 tiltOrigin;
@@ -1859,14 +1876,15 @@ struct DNM::stDynamicsComplexBlock: structure {
   MTH::stVector3D contact;
   MTH::stVector3D fallTranslation;
   /// Injectable parameters
-  stMACDPID macdpid;
+  stMACDPID MACDPID;
   pointer<stSuperObject> platformSuperObject;
-  stTransform previousMatrixAbsolute;
-  stTransform previousMatrixPrevious;
+  MAT::stTransformation previousMatrixAbsolute;
+  MAT::stTransformation previousMatrixPrevious;
+  CPA_ALLOCATOR
 };
 
 /// Dynamics obstacle reported from mechanics
-struct DNM::stDynamicsObstacle: structure {
+struct DNM::stDynamicsObstacle {
   /// Collision rate
   float32 rate;
   /// Contact normal
@@ -1879,34 +1897,32 @@ struct DNM::stDynamicsObstacle: structure {
   pointer<GMT::stGameMaterial> collidedMaterial;
   /// Collided object
   pointer<stSuperObject> superObject;
+  CPA_ALLOCATOR
 };
 
 /// A linear and angular movement offset
-struct DNM::stDynamicsMovement: structure {
+struct DNM::stDynamicsMovement {
   /// The linear movement
   MTH::stVector3D linear;
   /// The angular movement
   stDynamicsRotation angular;
+  CPA_ALLOCATOR
 };
 
 /// Dynamics collision report
-struct DNM::stDynamicsReport: structure {
+struct DNM::stDynamicsReport {
   /// The previous surface state
   uint32 previousSurfaceState;
   /// The current surface state
   uint32 currentSurfaceState;
-  /// Generic obstacle
-  stDynamicsObstacle obstacle;
-  /// Ground obstacle
-  stDynamicsObstacle ground;
-  /// Wall obstacle
-  stDynamicsObstacle wall;
-  /// Actor obstacle
-  stDynamicsObstacle character;
-  /// Water obstacle
-  stDynamicsObstacle water;
-  /// Ceiling obstacle
-  stDynamicsObstacle ceiling;
+  
+  stDynamicsObstacle genericObstacle;
+  stDynamicsObstacle groundObstacle;
+  stDynamicsObstacle wallObstacle;
+  stDynamicsObstacle characterObstacle;
+  stDynamicsObstacle waterObstacle;
+  stDynamicsObstacle ceilingObstacle;
+  
   /// Previous absolute speed
   stDynamicsMovement previousAbsoluteSpeed;
   /// Current absolute speed
@@ -1919,34 +1935,36 @@ struct DNM::stDynamicsReport: structure {
   char8 bitField;
   /// Padding
   padding(3)
+  
+  CPA_ALLOCATOR
 };
 
 /// Parameters for mechanics engine
-struct DNM::stDynamics: structure {
-  stDynamicsBaseBlock base;
-  stDynamicsAdvancedBlock advanced;
-  stDynamicsComplexBlock complex;
+struct DNM::stDynamics {
+  stDynamicsBaseBlock baseBlock;
+  stDynamicsAdvancedBlock advancedBlock;
+  stDynamicsComplexBlock complexBlock;
   
-  auto flag(int flag) -> bool {
-    return base.flags & flag;
-  }
+  MTH::stVector3D& Speed();
+  float HorizontalSpeed();
+  float VerticalSpeed();
   
-  auto endFlag(int flag) -> bool {
-    return base.endFlags & flag;
-  }
+  CPA_ALLOCATOR
 };
 
-struct DNM::stDynamicsParsingData: structure {
+struct DNM::stDynamicsParsingData {
   MTH::stVector3D position;
   float32 outAlpha;
   MTH::stVector3D vector;
+  CPA_ALLOCATOR
 };
 
 /// Dynamics reference structure
-struct DNM::stDynam: structure {
+struct DNM::stDynam {
   pointer<stDynamics> dynamics;
   pointer<stDynamicsParsingData> parsingDatas;
   uint32 usedMechanics;
+  CPA_ALLOCATOR
 };
 
 
@@ -1960,13 +1978,13 @@ struct DNM::stDynam: structure {
 #define dynamicsObstacleTypeMobileWall  9
 
 /// Mechanics engine obstacle (used internally)
-/// Cast to stCollisionCase
-struct MEC::stMechanicsObstacle: structure {
+/// Cast to stCollisionCase and partially to stDynamicsObstacle
+struct MEC::stMechanicsObstacle {
   /// Collision rate
   float32 rate;
   /// Contact normal
   MTH::stVector3D normal;
-  /// World contact poimt
+  /// World contact point
   MTH::stVector3D contact;
   /// Material for entity 1 (self)
   pointer<GMT::stGameMaterial> myMaterial;
@@ -1988,28 +2006,32 @@ struct MEC::stMechanicsObstacle: structure {
   MTH::stVector3D zonePosition;
   /// Zone radius of dynamic object
   float32 zoneRadius;
+  
+  CPA_ALLOCATOR
 };
 
-struct MEC::stMechanicsReport: structure {
+struct MEC::stMechanicsReport {
   /// The current surface state
   uint32_t currentSurfaceState;
   /// Generic obstacle
-  stMechanicsObstacle obstacle;
+  stMechanicsObstacle genericObstacle;
   /// Ground obstacle
-  stMechanicsObstacle ground;
+  stMechanicsObstacle groundObstacle;
   /// Wall obstacle
-  stMechanicsObstacle wall;
+  stMechanicsObstacle wallObstacle;
   /// Actor obstacle
-  stMechanicsObstacle character;
+  stMechanicsObstacle characterObstacle;
   /// Water obstacle
-  stMechanicsObstacle water;
+  stMechanicsObstacle waterObstacle;
   /// Ceiling obstacle
-  stMechanicsObstacle ceiling;
+  stMechanicsObstacle ceilingObstacle;
+  
+  CPA_ALLOCATOR
 };
 
 #pragma mark - Engine object
 
-struct stStandardGameInfo: structure {
+struct stStandardGameInfo {
   /// Family object type index
   int32 familyType;
   /// Model object type index
@@ -2044,12 +2066,14 @@ struct stStandardGameInfo: structure {
   uint8 optional;
   padding(2)
   /* :: custom values :: */
+  
+  CPA_ALLOCATOR
 };
 
 /// Engine object - an actor in the dynamic world
-struct stEngineObject: structure {
+struct stEngineObject {
   /// 3D-related parameters
-  pointer<st3DData> data3D;
+  pointer<st3DData> m_3DData;
   /// Standard game info
   pointer<stStandardGameInfo> stdGame;
   /// Dynamics
@@ -2059,7 +2083,7 @@ struct stEngineObject: structure {
   /// Cinematic-related info of this actor
   pointer<CINE::stCineInfo> cineInfo;
   /// Collision geometry set
-  pointer<COL::stCollideSet> collSet;
+  pointer<COL::stCollideSet> collideSet;
   /// Waypoint microstructure
   pointer<MS::stMSWay> msWay;
   /// Light microstructure
@@ -2070,26 +2094,13 @@ struct stEngineObject: structure {
   pointer<MS::stMicro> micro;
   /// Sound microstructure
   pointer<MS::stMSSound> msSound;
+    
+  /// The name of this actor in order of [Instance, Model, Family]
+  const std::string Name(int objectType = ObjectType_Instance);
+  /// The superobject associated with this actor.
+  pointer<stSuperObject> SuperObject() const;
   
-  /// Get the name of this actor in order of [Instance, Model, Family]
-  inline auto name(ObjectType type = Instance) -> std::string;
-  /// Get the superobject associated with this actor
-  inline auto superobject() -> pointer<stSuperObject>;
-  
-  /// Get the speed of this actor
-  inline auto speed() -> MTH::stVector3D;
-  /// Get the horizontal speed of this actor
-  inline auto horizontalSpeed() -> float;
-  /// Get the vertical speed of this actor
-  inline auto verticalSpeed() -> float;
-  
-  
-  /// Return the AI model of this actor
-  inline auto aiModel() -> pointer<AI::stAIModel>;
-  /// Get the dsg variable memory
-  inline auto dsgMem() -> pointer<AI::stDsgMem>;
-  /// Get the dsg variable memory at specified index
-  inline auto dsgVar(int idx, uint32_t* type = nullptr) -> pointer<>;
+  CPA_ALLOCATOR
 };
 
 
@@ -2105,7 +2116,11 @@ using stListOfSectorsInActivityInteraction = LinkedListElement<stSuperObject>;
 using stListOfSectorsInSoundInteraction = LinkedListElement<stSuperObject>;
 }
 
-struct SECT::stSector: structure {
+#define SECT_SectorPriority_Min     0
+#define SECT_SectorPriority_Normal  64
+#define SECT_SectorPriority_Max     127
+
+struct SECT::stSector {
   stDoublyLinkedList<stListOfCharacters> characters;
   stDoublyLinkedList<stListOfStaticLights> staticLights;
   stDoublyLinkedList<stListOfDynamicLights> dynamicLights;
@@ -2121,31 +2136,29 @@ struct SECT::stSector: structure {
   int8 cameraType;
   int8 counter;
   int8 priority;
-  pointer<> skyMaterial;
+  pointer<GLI::stMaterial> skyMaterial;
   uint8 fog;
 #if platform == GCN
   string<0x100> name;
 #endif
   
-  enum priority { Min = 0, Normal = 64, Max = 127 };
+  CPA_ALLOCATOR
 };
 
 #pragma mark - COL -
 
 // Collide element type
-enum COL::ElementType : int {
-  IndexedTriangles = 1,
-  Facemap = 2,
-  Sprite = 3,
-  TMesh = 4,
-  Points = 5,
-  Lines = 6,
-  IndexedSpheres = 7,
-  AABB = 8,
-  Cones = 9,
-  DeformationSetInfo = 13,
-  Invalid = 0xFFFF,
-};
+#define COL_ElementType_IndexedTriangles    1
+#define COL_ElementType_Facemap             2
+#define COL_ElementType_Sprite              3
+#define COL_ElementType_TMesh               4
+#define COL_ElementType_Points              5
+#define COL_ElementType_Lines               6
+#define COL_ElementType_IndexedSpheres      7
+#define COL_ElementType_AABB                8
+#define COL_ElementType_Cones               9
+#define COL_ElementType_DeformationSetInfo  13
+#define COL_ElementType_Invalid             0xFFFF
   
 // Material identifier mask
 #define COL_MaterialIdMask_None              (0 << 0)
@@ -2167,13 +2180,11 @@ enum COL::ElementType : int {
 #define COL_MaterialIdMask_NoCollision       (1 << 15)
 #define COL_MaterialIdMask_All               (65535)
 
-struct COL::stOctreeNode: structure {
-  /// Minimum point
-  MTH::stVector3D min;
-  /// Maximum point
-  MTH::stVector3D max;
-  /// 8 child nodes
-  doublepointer<stOctreeNode> children;
+struct COL::stOctreeNode {
+  MTH::stVector3D minPoint;
+  MTH::stVector3D maxPoint;
+  doublepointer<stOctreeNode> childNodes; /* always 8 */
+  
   /// Face indices: overlapping indices into element and element data. May be NULL.
   pointer<uint8> faceIndices;
   
@@ -2181,12 +2192,13 @@ struct COL::stOctreeNode: structure {
   inline auto numElements() -> int16 {
     return faceIndices ? *static_cast<int16*>(faceIndices) : int16(0);
   }
+  
+  CPA_ALLOCATOR
 };
 
-struct COL::stOctree: structure {
-  /// Root node
+struct COL::stOctree {
   pointer<stOctreeNode> rootNode;
-  /// Faces which this octree encompasses
+  /// Number of faces which this octree encompasses
   int16 numFaces;
   /// Padding
   padding(2)
@@ -2196,9 +2208,11 @@ struct COL::stOctree: structure {
   MTH::stVector3D min;
   /// Maximum point
   MTH::stVector3D max;
+  
+  CPA_ALLOCATOR
 };
 
-struct COL::stCollideObject: structure {
+struct COL::stCollideObject {
   /// Number of vertices
   int16 numVertices;
   /// Number of elements
@@ -2211,9 +2225,9 @@ struct COL::stCollideObject: structure {
   pointer<MTH::stVector3D> vertices;
   /// Element types
   pointer<int16> elementTypes;
-  /// stCollideElement...
+  /// `stCollideElement`...
   doublepointer<> elements;
-  /// Octree partitioning for this collide object
+  /// Octree partitioning
   pointer<stOctree> octree;
   ///
   pointer<> boundingBoxes;
@@ -2221,25 +2235,29 @@ struct COL::stCollideObject: structure {
   float32 boundingSphereRadius;
   /// Position of the bounding sphere which encompasses this object
   MTH::stVector4D boundingSpherePosition;
+  
+  CPA_ALLOCATOR
 };
 
-struct COL::stPhysicalCollideSet: structure {
-  pointer<stCollideObject> zdm;
-  pointer<stCollideObject> zdd;
-  pointer<stCollideObject> zde;
-  pointer<stCollideObject> zdr;
+struct COL::stPhysicalCollideSet {
+  pointer<stCollideObject> zdm; ///< Mechanics zone
+  pointer<stCollideObject> zdd; ///< Detection zone
+  pointer<stCollideObject> zde; ///< Event zone
+  pointer<stCollideObject> zdr; ///< Reaction zone
+  CPA_ALLOCATOR
 };
 
-struct COL::stColliderInfo: structure {
+struct COL::stColliderInfo {
   pointer<stSuperObject> colliderActors[2];
   MTH::stVector3D colliderVectors[2];
   float32 colliderReal[2];
   uint8 colliderType;
   uint8 colliderPriority;
   uint8 unused[2];
+  CPA_ALLOCATOR
 };
 
-struct COL::stZdxListEntry: structure {
+struct COL::stZdxListEntry {
 #if platform == GCN
   pointer<stZdxListEntry> next;
   pointer<stZdxListEntry> prev;
@@ -2248,9 +2266,11 @@ struct COL::stZdxListEntry: structure {
 #else
   pointer<stCollideObject> data;
 #endif
+  
+  CPA_ALLOCATOR
 };
 
-struct COL::stZdxList: structure {
+struct COL::stZdxList {
 #if platform == GCN
   stDoublyLinkedList<stZdxListEntry> list;
 #else
@@ -2260,18 +2280,21 @@ struct COL::stZdxList: structure {
   padding(2)
   
   /// Return a vector of all the collide zdx objects
-  inline auto all() -> std::vector<pointer<stCollideObject>>;
-};
-
-struct COL::stCsaList: structure {
-  stDoublyLinkedList<> list;
-};
-
-struct COL::stZoneSetList: structure {
+  std::vector<pointer<stCollideObject>> all();
   
+  CPA_ALLOCATOR
 };
 
-struct COL::stCollideSet: structure {
+struct COL::stCsaList {
+  stDoublyLinkedList<> list;
+  CPA_ALLOCATOR
+};
+
+struct COL::stZoneSetList {
+  CPA_ALLOCATOR
+};
+
+struct COL::stCollideSet {
   pointer<stZdxList> zddList;
   pointer<stZdxList> zdeList;
   pointer<stZdxList> zdmList;
@@ -2293,24 +2316,26 @@ struct COL::stCollideSet: structure {
   uint8 collisionFlag;
   padding(1)
   stColliderInfo colliderInfo;
+  
+  CPA_ALLOCATOR
 };
 
-struct COL::stCollideElementIndexedTriangles: structure {
+struct COL::stCollideElementIndexedTriangles {
   /// Collide material
-  pointer<COL::stCollideMaterial> material;
+  pointer<COL::stCollideMaterial> collideMaterial;
   /// Indices into collide element vertex array
   pointer<uint16> faceIndices;
   /// List of normals
-  pointer<MTH::stVector3D> normals;
+  pointer<MTH::stVector3D> faceNormals;
   /// Number of faces
   int16 numFaces;
   /// Index of AABB
   int16 aabbIndex;
-  /// Visual set
-  pointer<GEO::stVisualElementIndexedTriangles> visual;
+  /// Visual set (often NULL, used by the editor for visualizing collide objects)
+  pointer<GEO::stVisualElementIndexedTriangles> visualSet;
   /// Indices of triangle edges
   pointer<uint16> edgeIndices;
-  /// Indices of edge normals
+  /// Indices of edge normals (edges are separate collision entities from triangles)
   pointer<MTH::stVector3D> edgeNormals;
   /// Edge coefficients
   pointer<float32> edgeCoefficients;
@@ -2318,31 +2343,37 @@ struct COL::stCollideElementIndexedTriangles: structure {
   int16 numEdges;
   /// Padding
   padding(2)
+  
+  CPA_ALLOCATOR
 };
 
 /// Indexed collide sphere
-struct COL::stCollideElementIndexedSphere: structure {
+struct COL::stCollideElementIndexedSphere {
   /// Sphere radius
   float32 radius;
   /// Collide material
-  pointer<GMT::stGameMaterial> material;
+  pointer<GMT::stGameMaterial> collideMaterial;
   /// Index into collide element vertex array
   int16 indexOfCenterPoint;
   /// Padding
   padding(2)
+  
+  CPA_ALLOCATOR
 };
 
 /// A collide element of multiple indexed spheres
-struct COL::stCollideElementIndexedSpheres: structure {
+struct COL::stCollideElementIndexedSpheres {
   /// List of spheres
   pointer<stCollideElementIndexedSphere> spheres;
   /// Number of spheres
   int16 numSpheres;
   /// Collide object AABB index
   int16 aabbIndex;
+  
+  CPA_ALLOCATOR
 };
 
-struct COL::stCollideMaterial: structure {
+struct COL::stCollideMaterial {
   int16 zoneType;
   /// COL_MaterialIdMask_
   uint16 identifier;
@@ -2352,10 +2383,12 @@ struct COL::stCollideMaterial: structure {
   float32 coefficient;
   uint16 aiType;
   padding(2)
+  
+  CPA_ALLOCATOR
 };
 
 /// Collision case, cast internally to MEC::stMechanicsObstacle.
-struct COL::stCollisionCase: structure {
+struct COL::stCollisionCase {
   /// Time of collision (-1.0 to 1.0)
   float32 collisionTime;
   /// Normal of the collision
@@ -2370,8 +2403,8 @@ struct COL::stCollisionCase: structure {
   pointer<> param1;
   /// Parameter 2
   int32 param2;
-  int16 dynamicEntity;
-  int16 staticEntity;
+  int16 dynamicEntityType;
+  int16 staticEntityType;
   MTH::stVector3D translation;
   MTH::stVector3D movement;
   MTH::stVector3D endPosition;
@@ -2380,29 +2413,34 @@ struct COL::stCollisionCase: structure {
   float32 rebound1;
   float32 slide2;
   float32 rebound2;
+  
+  CPA_ALLOCATOR
 };
 
-struct COL::stIndexedAlignedBox: structure {
-  int16 min;
-  int16 max;
+struct COL::stIndexedAlignedBox {
+  int16 minPoint;
+  int16 maxPoint;
   pointer<GMT::stGameMaterial> material;
+  
+  CPA_ALLOCATOR
 };
 
-struct COL::stCollideElementAlignedBoxes: structure {
+struct COL::stCollideElementAlignedBoxes {
   pointer<stIndexedAlignedBox> boxes;
   int16 numBoxes;
   int16 parallelBoxIndex;
+  
+  CPA_ALLOCATOR
 };
 
-#define COL_MaxSelectedOctreeNodes  100
-
-struct COL::stGVForCollision: structure {
+/// Global structure used for all things collision-related
+struct COL::stGVForCollision {
   pointer<MTH::stVector3D> vertex1;
   MTH::stVector3D edgeVector;
   pointer<MTH::stVector3D> vertex2;
   MTH::stVector3D dinST0Point;
   float32 dynamicRadius;
-  pointer<stTransform> staticGeometricObjMatrix;
+  pointer<MAT::stTransformation> staticGeometricObjMatrix;
   MTH::stVector3D dinST1Point;
   MTH::stVector3D dinST01Vector;
   pointer<GMT::stGameMaterial> dynamicMaterial;
@@ -2419,31 +2457,52 @@ struct COL::stGVForCollision: structure {
   uint8 staticGeomObjHasNoTransformationMatrix;
   uint8 dynamicGeomObjHasZoomInsteadOfScale;
   pointer<stCollideObject> dynamicCollideObject;
-  pointer<stTransform> dynamicGeometricObjectMatrixT0;
-  pointer<stTransform> dynamicGeometricObjectMatrixT1;
-  stTransform inverseMatrix;
-  stTransform transformMatrixD2ST0;
-  stTransform transformMatrixD2ST1;
-  stTransform transformMatrixS2DT0;
-  stTransform transformMatrixS2DT1;
+  pointer<MAT::stTransformation> dynamicGeometricObjectMatrixT0;
+  pointer<MAT::stTransformation> dynamicGeometricObjectMatrixT1;
+  MAT::stTransformation inverseMatrix;
+  MAT::stTransformation transformMatrixD2ST0;
+  MAT::stTransformation transformMatrixD2ST1;
+  MAT::stTransformation transformMatrixS2DT0;
+  MAT::stTransformation transformMatrixS2DT1;
+  
+  /// Scale factor to be used for the static object
   float32 staticScale;
+  /// Indexed spheres for the dynamic object
   pointer<stCollideElementIndexedSpheres> dynamicElementSpheres;
+  /// Indexed spheres for the static object
   pointer<stCollideElementIndexedSpheres> staticElementSpheres;
+  
   int32 bitFieldOfIndexedSpheresInCollision;
+  /// The current static sphere being collided
   pointer<stCollideElementIndexedSphere> staticIndexedSphere;
   MTH::stVector3D swapDinST0Point;
+  /// Center point of the dynamic object
   pointer<MTH::stVector3D> dynamicCenter;
+  /// Center point of the static object
   pointer<MTH::stVector3D> staticCenter;
+  
+  /// If `useEnlargedSphere` is true, this is the radius of the original
+  /// size sphere, and if it is false it is the radius of the enlarged sphere.
   float32 swapRadius;
+  /// Whether to use the enlarged sphere or not (scaled by staticScale)
   uint8 useEnlargedSphere;
+  
+  
+  #define COL_MaxSelectedOctreeNodes  100
+  /// Number of selected nodes of `octree`
   int16 numSelectedNodes;
+  /// The selected nodes of `octree`
   pointer<stOctreeNode> selectedOctreeNodes[COL_MaxSelectedOctreeNodes];
+  /// The selected nodes' of `octree` T values
   float32 selectedOctreeT[COL_MaxSelectedOctreeNodes];
+  
+  
   pointer<stCollideElementAlignedBoxes> dynamicElementAlignedBoxes;
   int16 dynamicIndexedAlignedBoxIndex;
   pointer<stIndexedAlignedBox> dynamicIndexedAlignedBox;
   pointer<MTH::stVector3D> dynamicMinPoint;
   pointer<MTH::stVector3D> dynamicMaxPoint;
+  
   MTH::stVector3D dinST0MaxPoint;
   MTH::stVector3D dinST0MinPoint;
   MTH::stVector3D dinST1MaxPoint;
@@ -2451,7 +2510,10 @@ struct COL::stGVForCollision: structure {
   MTH::stVector3D dinST08VBox[8];
   MTH::stVector3D dinST18VBox[8];
   MTH::stVector3D dinST01Vect[8];
+  
+  /// Index of sphere in `staticElementSpheres`?
   int16 staticIndexedSphereIndex;
+  
   pointer<stCollideElementAlignedBoxes> staticElementAlignedBoxes;
   pointer<stIndexedAlignedBox> staticIndexedBox;
   pointer<MTH::stVector3D> pStaticMinPoint;
@@ -2459,47 +2521,53 @@ struct COL::stGVForCollision: structure {
   MTH::stVector3D staticMinPoint;
   MTH::stVector3D staticMaxPoint;
   MTH::stVector3D static8VBox[8];
+  
+  CPA_ALLOCATOR
 };
 
-struct COL::stBoundingSphere: structure {
+struct COL::stBoundingSphere {
   MTH::stVector4D center;
   float32 radius;
 #if engine == R3 && platform == PS2
   padding(12)
 #endif
+  
+  CPA_ALLOCATOR
 };
 
-struct COL::stParallelBox: structure {
-  MTH::stVector3D min;
-  MTH::stVector3D max;
+struct COL::stParallelBox {
+  MTH::stVector3D minPoint;
+  MTH::stVector3D maxPoint;
+  
+  CPA_ALLOCATOR
 };
 
 #pragma mark - GEO
 
-enum GEO::ElementType : int {
-  IndexedTriangles = 1,
-  Facemap = 2,
-  Sprite = 3,
-  TMesh = 4,
-  Points = 5,
-  Lines = 6,
-  IndexedSpheres = 7,
-  AABB = 8,
-  Cones = 9,
-  Altimap = 11,
-  DeformationSetInfo = 13,
-};
+#define GEO_ElementType_IndexedTriangles    1
+#define GEO_ElementType_Facemap             2
+#define GEO_ElementType_Sprite              3
+#define GEO_ElementType_TMesh               4
+#define GEO_ElementType_Points              5
+#define GEO_ElementType_Lines               6
+#define GEO_ElementType_IndexedSpheres      7
+#define GEO_ElementType_AABB                8
+#define GEO_ElementType_Cones               9
+#define GEO_ElementType_Altimap             11
+#define GEO_ElementType_DeformationSetInfo  13
 
 union GEO::uVisualObject {
   pointer<GEO::stGeometricObject> geometricObject;
   pointer<MOR::stMorphObject> morphObject;
+  CPA_ALLOCATOR
 };
 
-struct GEO::stGeometricObject: structure {
+struct GEO::stGeometricObject {
   pointer<MTH::stVector3D> vertices;
   pointer<MTH::stVector3D> vertexNormals;
 #if engine == R3 && platform == GCN
-  pointer<> unknown;
+  // Vertex blend weights for each multimaterial
+  doublepointer<float32> blendWeights;
 #endif
   doublepointer<float32> vertexTransparency;
   pointer<int16> elementTypes;
@@ -2521,14 +2589,17 @@ struct GEO::stGeometricObject: structure {
   int16 numOctreeEdges;
   int32 usedForDrawingShadow;
   int32 usedForCreatingShadow;
+  /// TODO: check if this is specific to ps2
   pointer<> sdcData;
   uint32 isStatic;
   uint32 displayList;
   uint8 vtForSinus;
   padding(3)
+  
+  CPA_ALLOCATOR
 };
 
-struct GEO::stVisualSet: structure {
+struct GEO::stVisualSet {
   float32 lastDistance;
   int16 numLodDefinitions;
   int16 type;
@@ -2536,14 +2607,15 @@ struct GEO::stVisualSet: structure {
   pointer<uVisualObject> LODDefinitions;
   doublepointer<> hRLI;
   int32 numRLI;
+  CPA_ALLOCATOR
 };
 
-struct GEO::stVisualElementIndexedTriangles: structure {
+struct GEO::stVisualElementIndexedTriangles {
   pointer<GLI::stMaterial> visualMaterial;
   int16 numFaces;
   int16 numUVs;
   int16 numUVMaps;
-  padding(2)
+  padding(2) // lightmap index?
   pointer<uint16> faceIndices;
 #if game == R3_GCN
   padding(4)
@@ -2577,53 +2649,73 @@ struct GEO::stVisualElementIndexedTriangles: structure {
  #endif
 #endif
   
+  
+#if platform == PS2
   uint32 vao[4];
+#else
+  string<32> name;
+#endif
+  
+  CPA_ALLOCATOR
 };
 
 struct GEO::stColor {
-  float32 r;
-  float32 g;
-  float32 b;
-  float32 a;
+  float32 r = 0.0f;
+  float32 g = 0.0f;
+  float32 b = 0.0f;
+  float32 a = 0.0f;
+  
+  inline operator MTH::stVector4D&() const {
+    return *(MTH::stVector4D*)&r;
+  }
+  
+  CPA_ALLOCATOR
 };
 
-struct GEO::stParallelBox: structure {
+struct GEO::stParallelBox {
   MTH::stVector3D min;
   MTH::stVector3D max;
+  CPA_ALLOCATOR
 };
 
 #pragma mark - GMT
 
-struct GMT::stCollideMaterial: structure {
+struct GMT::stCollideMaterial {
   int16 zoneType;
   uint16 identifier;
   MTH::stVector3D direction;
   float32 coefficient;
   uint16 aiType;
   padding(2)
+  
+  CPA_ALLOCATOR
 };
 
-struct GMT::stGameMaterial: structure {
+struct GMT::stGameMaterial {
   int32 soundMaterial;
   pointer<stCollideMaterial> collideMaterial;
+  
+  CPA_ALLOCATOR
 };
 
 #pragma mark - PO
 
-struct PO::stPhysicalObject: structure {
+struct PO::stPhysicalObject {
   pointer<GEO::stVisualSet> visualSet;
   pointer<COL::stPhysicalCollideSet> physicalCollideSet;
   pointer<COL::stBoundingSphere> visualBoundingVolume;
   pointer<COL::stBoundingSphere> collideBoundingVolume;
+  
+  CPA_ALLOCATOR
 };
-
 
 #pragma mark - IPO
 
-struct IPO::stInstantiatedPhysicalObject: structure {
+struct IPO::stInstantiatedPhysicalObject {
   pointer<PO::stPhysicalObject> physicalObject;
-  pointer<> currentRadiosity;
-  doublepointer<> radiosity;
+  /// Current vertex radiosity. When the level loads, this is transferred into VRAM and unloaded.
+  pointer<ISI::stISI> currentRadiosity;
+  doublepointer<ISI::stISI> radiosity;
   pointer<stSuperObject> portalCamera;
   uint32 lastTransitionID;
   float32 lastRatioUsed;
@@ -2631,28 +2723,70 @@ struct IPO::stInstantiatedPhysicalObject: structure {
   padding(4)
   string<0x32> name;
 #endif
+  
+  CPA_ALLOCATOR
 };
+
+
+#pragma mark - ISI
+
+struct ISI::stColor {
+  uint16 r;
+  uint16 g;
+  uint16 b;
+  uint16 a;
+  
+  inline operator MTH::stVector4D() const {
+//    pointer<float32> hRLIScaleTable = pointer<float32>(0x8050d0c0);
+//    float scale = hRLIScaleTable[int(255.0f * fVar3)];
+    MTH::stVector4D result {};
+    result.x() = std::clamp(float(r), 0.0f, 255.0f) / 255.0f;
+    result.y() = std::clamp(float(g), 0.0f, 255.0f) / 255.0f;
+    result.z() = std::clamp(float(b), 0.0f, 255.0f) / 255.0f;
+    result.w() = std::clamp(float(a), 0.0f, 255.0f) / 255.0f;
+    return result;
+  }
+  
+  CPA_ALLOCATOR
+};
+
+struct ISI::stLOD {
+  uint16 numVertexRLI;
+  padding(2)
+  pointer<ISI::stColor> vertexRLI;
+  pointer<float32> luminosity;
+  
+  CPA_ALLOCATOR
+};
+
+struct ISI::stISI {
+  uint16 numLOD;
+  padding(2)
+  pointer<ISI::stLOD> hLOD;
+  
+  CPA_ALLOCATOR
+};
+
 
 #pragma mark - stSuperObject
 
-struct stSuperObject: structure {
+#define HIE_SuperObjectType_None                  (0 << 0)
+#define HIE_SuperObjectType_World                 (1 << 0)
+#define HIE_SuperObjectType_Actor                 (1 << 1)
+#define HIE_SuperObjectType_Sector                (1 << 2)
+#define HIE_SuperObjectType_PhysicalObject        (1 << 3)
+#define HIE_SuperObjectType_PhysicalObjectMirror  (1 << 4)
+#define HIE_SuperObjectType_IPO                   (1 << 5)
+#define HIE_SuperObjectType_IPOMirror             (1 << 6)
+#define HIE_SuperObjectType_SpecialEffect         (1 << 7)
+#define HIE_SuperObjectType_NoAction              (1 << 8)
+#define HIE_SuperObjectType_Mirror                (1 << 9)
+
+struct stSuperObject {
+  stSuperObject(const uint32 type);
+  
+  /// The type of the object
   uint32 type;
-  
-  enum type {
-    None                 = (0 << 0),
-    World                = (1 << 0),
-    Actor                = (1 << 1),
-    Sector               = (1 << 2),
-    PhysicalObject       = (1 << 3),
-    PhysicalObjectMirror = (1 << 4),
-    IPO                  = (1 << 5),
-    IPOMirror            = (1 << 6),
-    SpecialEffect        = (1 << 7),
-    NoAction             = (1 << 8),
-    Mirror               = (1 << 9),
-  };
-  
-  stSuperObject() {}
   
   union {
     pointer<> data;
@@ -2675,9 +2809,9 @@ struct stSuperObject: structure {
   /// The parent of this superobject
   pointer<stSuperObject> parent;
   /// The transform local to the object
-  pointer<stTransform> localTransform;
+  pointer<MAT::stTransformation> localTransform;
   /// The transform local to the world
-  pointer<stTransform> globalTransform;
+  pointer<MAT::stTransformation> globalTransform;
   /// The last level frame this object was updated
   int32 prevFrameProcessed;
   /// GLI draw flags
@@ -2713,56 +2847,22 @@ struct stSuperObject: structure {
   ///
   padding(1)
   
-  /// Return the name of this superobject's type
-  inline auto typeName() -> std::string;
-  /// Return the name of the superobject
-  inline auto name(bool fullname = false) -> std::string;
-  /// Get the position of the superobject
-  inline auto position() -> MTH::stVector3D&;
+  /// The name of this superobject
+  const std::string Name() const;
+  /// The name of this superobject's type
+  const std::string TypeName() const;
+  /// The global transform
+  MAT::stTransformation& Transform() const;
   
-  /// Adds a new child object to this superobject,
-  /// detaching it from any previous hierarchy.
-  auto addChild(pointer<stSuperObject> obj) -> bool {
-    if (!obj) return false;
-    obj->detach();
-    if (!firstChild && !lastChild && numChildren == 0) {
-      firstChild = obj;
-      lastChild = obj;
-      obj->parent = this;
-      obj->prev = nullptr;
-      obj->next = nullptr;
-    } else {
-      lastChild->next = obj;
-      obj->prev = lastChild;
-      lastChild = obj;
-      numChildren++;
-    }
-    return true;
-  }
-  
+  /// Add a new child to this object
+  bool AddChild(pointer<stSuperObject>&);
   /// Detach this object from the hierarchy
-  auto detach() -> pointer<stSuperObject> {
-    if (prev) prev->next = next;
-    if (next) next->prev = prev;
-    if (parent) parent->numChildren--;
-    if (parent && parent->firstChild == this) parent->firstChild = next;
-    if (parent && parent->lastChild == this) parent->lastChild = prev;
-    return this;
-  }
+  void Detach();
+  bool IsDetached();
   
-  auto isDetached() -> bool {
-    return !next && !prev && !parent;
-  }
   
   /// Find a superobject in this hierarchy
-  pointer<stSuperObject> find(std::string name) {
-    pointer<stSuperObject> result = nullptr;
-    _recurse(this, nullptr, [&name, &result](pointer<stSuperObject> obj, void*) {
-      if (!std::strcmp(obj->name().c_str(), name.c_str()))
-        return (result = obj);
-    });
-    return result;
-  }
+  pointer<stSuperObject>& Find(const std::string& name);
   
   /// Recurse the tree below this superobject
   template <typename F, typename UserData>
@@ -2790,6 +2890,8 @@ struct stSuperObject: structure {
   
   auto begin() const -> iterator { return firstChild; }
   auto end() const -> iterator { return lastChild; }
+  
+  CPA_ALLOCATOR
   
 private:
   template <typename F, typename UserData>
@@ -2893,15 +2995,17 @@ private:
 #define AI_ScriptNodeTypeCineRef            43 /* ? */
 #define AI_ScriptNodeTypeGraphRef           44
 
-struct AI::stBrain: structure {
+struct AI::stBrain {
   pointer<stMind> mind;
   pointer<GMT::stGameMaterial> lastNoCollideMaterial;
   uint8 warnMechanics;
   uint8 activeDuringTransition;
   padding(2)
+  
+  CPA_ALLOCATOR
 };
 
-struct AI::stMind: structure {
+struct AI::stMind {
   pointer<stAIModel> aiModel;
   pointer<stIntelligence> intelligence;
   pointer<stIntelligence> reflex;
@@ -2909,18 +3013,22 @@ struct AI::stMind: structure {
   pointer<> unknown;
   uint8 runIntelligence;
   padding(3)
+  
+  CPA_ALLOCATOR
 };
 
-struct AI::stAIModel: structure {
+struct AI::stAIModel {
   pointer<stScriptAI> intelligenceBehaviorList;
   pointer<stScriptAI> reflexBehaviorList;
   pointer<stDsgVar> dsgVar;
   pointer<stMacroList> macroList;
   uint8 secondPassFinished;
   padding(3)
+  
+  CPA_ALLOCATOR
 };
 
-struct AI::stNodeInterpret: structure {
+struct AI::stNodeInterpret {
 #if platform == GCN
   uint32 param;
   padding(3)
@@ -2929,11 +3037,13 @@ struct AI::stNodeInterpret: structure {
   uint8 depth;
   padding(1)
 #endif
-  using ParamType = decltype(param);
+  
+  CPA_ALLOCATOR
 };
 
-struct AI::stTreeInterpret: structure {
+struct AI::stTreeInterpret {
   pointer<stNodeInterpret> node;
+  CPA_ALLOCATOR
 };
 
 union AI::uGetSetParam {
@@ -2942,13 +3052,15 @@ union AI::uGetSetParam {
   int32 s32Value;
   float32 floatValue;
   pointer<> pointerValue;
+  CPA_ALLOCATOR
 };
 
-struct AI::stActionParam: structure {
+struct AI::stActionParam {
   union uGetSetParam param[8];
+  CPA_ALLOCATOR
 };
 
-struct AI::stActionTableEntry: structure {
+struct AI::stActionTableEntry {
 #if platform == GCN
   string<0x50> name;
   uint32 param[8];
@@ -2963,75 +3075,86 @@ struct AI::stActionTableEntry: structure {
   uint8 numRules;
   uint8 useDefaultReturn;
   uint8 newReturn;
+  CPA_ALLOCATOR
 };
 
-struct AI::stActionTable: structure {
+struct AI::stActionTable {
   pointer<stActionTableEntry> entries;
   uint8 numEntries;
   uint8 numEntriesUsed;
   uint8 currentEntry;
   padding(1)
+  CPA_ALLOCATOR
 };
 
-struct AI::stBehavior: structure {
+struct AI::stBehavior {
   string<0x100> name; /* 256 on GCN, at least */
   pointer<stTreeInterpret> scripts;
   pointer<stTreeInterpret> firstScript;
   uint8 numScripts;
   padding(3)
+  CPA_ALLOCATOR
 };
 
-struct AI::stMacro: structure {
+struct AI::stMacro {
   string<0x100> name;
   pointer<stTreeInterpret> initialTree;
   pointer<stTreeInterpret> currentTree;
+  CPA_ALLOCATOR
 };
 
-struct AI::stMacroList: structure {
+struct AI::stMacroList {
   pointer<stMacro> macros;
   uint8 numMacros;
   padding(3)
+  CPA_ALLOCATOR
 };
 
-struct AI::stScriptAI: structure {
+struct AI::stScriptAI {
   pointer<stBehavior> behavior;
   uint32 numBehaviors;
   uint32 noInitialization;
   uint8 numActionTableEntries;
   padding(3)
+  CPA_ALLOCATOR
 };
 
-struct AI::stIntelligence: structure {
+struct AI::stIntelligence {
   doublepointer<stScriptAI> scriptAI;
   pointer<stNodeInterpret> currentTree;
   pointer<stBehavior> currentBehavior;
   pointer<stBehavior> previousBehavior;
   pointer<> actionTable;
   uint32 initializeBehavior;
+  CPA_ALLOCATOR
 };
 
-struct AI::stDsgVarInfo: structure {
+struct AI::stDsgVarInfo {
   uint32 memoryOffset;
   uint32 type;
   int16 saveType;
   padding(2)
   uint32 objectTreeInitialType;
+  CPA_ALLOCATOR
 };
 
-struct AI::stDsgVar: structure {
+struct AI::stDsgVar {
   pointer<> memory;
   pointer<stDsgVarInfo> info;
   uint32 memorySize;
   uint8 infoLength;
   padding(3)
+  CPA_ALLOCATOR
 };
 
-struct AI::stDsgMem: structure {
+struct AI::stDsgMem {
   doublepointer<stDsgVar> dsgVars;
-  pointer<> initialBuffer;
-  pointer<> currentBuffer;
+  pointer<uint8> initialBuffer;
+  pointer<uint8> currentBuffer;
   
   inline auto dsgVarInfo(int idx) -> pointer<stDsgVarInfo> { return (*dsgVars)->info + idx; }
+  
+  CPA_ALLOCATOR
 };
 
 #pragma mark - GLI
@@ -3050,7 +3173,6 @@ struct AI::stDsgMem: structure {
 #define GLI_Flag_DisableDrawBoundingVolume    (1 << 11)
 #define GLI_Flag_RLI                          (1 << 12)
 #define GLI_Flag_DisableComputeSpecular       (1 << 13)
-
 #define GLI_Flag_NoPriority                   (1 << 14)
 #define GLI_Flag_UseStaticLights              (1 << 15)
 #define GLI_Flag_UseShadow                    (1 << 16)
@@ -3071,15 +3193,16 @@ struct AI::stDsgMem: structure {
 #define GLI_Flag_NoSinusEffect                (1 << 31)
 
 
-struct GLI::stVertex2D: structure {
+struct GLI::stVertex2D {
   float32 x;
   float32 y;
   float32 dz;
+  CPA_ALLOCATOR
 };
 
-struct GLI::stCamera: structure {
+struct GLI::stCamera {
   int32 cameraMode;
-  stTransform transform;
+  MAT::stTransformation transform;
   /// Field of view
   float32 xAlpha;
   /// Field of view
@@ -3103,18 +3226,27 @@ struct GLI::stCamera: structure {
   uint8 transparency;
   float32 transpDist;
   uint8 mirrored;
+  CPA_ALLOCATOR
 };
 
-struct GLI::stZBufferForLight: structure {
+struct GLI::stZBufferForLight {
   int32 sizeX;
   int32 sizeY;
   float32 coefX;
   float32 coefY;
   pointer<> ZBufferMap;
   pointer<> middleZBufferMap;
+  CPA_ALLOCATOR
 };
 
-struct GLI::stLight: structure {
+#define GLI_LightType_Parallel      1
+#define GLI_LightType_Spherical     2
+#define GLI_LightType_Spot          3
+#define GLI_LightType_Ambient       4
+#define GLI_LightType_LimitParallel 5
+#define GLI_LightType_Fog           6
+
+struct GLI::stLight {
   int32 active;
   int32 isZBuffered;
   //int32 lightType;
@@ -3122,8 +3254,8 @@ struct GLI::stLight: structure {
   int16 lightType;
   padding(2);
   
-  float32 near;
   float32 far;
+  float32 near;
   float32 littleAlpha;
   float32 bigAlpha;
   float32 littleTangent;
@@ -3135,24 +3267,28 @@ struct GLI::stLight: structure {
   float32 attenuation1;
   float32 attenuation2;
 #endif
-  stTransform transform;
+  MAT::stTransformation transform;
   stZBufferForLight zbuffer;
   GEO::stColor color;
   float32 sqNear;
   float32 sqFar;
   float32 sqDiv;
   
-  enum Type {
-    Parallel = 1,
-    Spherical = 2,
-    Spot = 3,
-    Ambient = 4,
-    LimitParallel = 5,
-    Fog = 6
-  };
+  MTH::stVector3D boxV0;
+  MTH::stVector3D boxV1;
+  MTH::stVector3D boxV2;
+  MTH::stVector3D boxV3;
+  MTH::stVector3D boxCenter;
+  
+  float32 radius;
+  float32 intensity; // min/max?
+  
+  MTH::stVector4D backgroundColor;
+  
+  CPA_ALLOCATOR
 };
 
-struct GLI::stTexture: structure {
+struct GLI::stTexture {
   uint32 format;
   uint8 available;
   uint8 textureQuality;
@@ -3179,24 +3315,36 @@ struct GLI::stTexture: structure {
   uint8 bilinearMode;
   uint8 cyclingMode;
   string<128> filename;
+  padding(2)
+  CPA_ALLOCATOR
 };
 
-struct GLI::stAnimatedTextureNode: structure {
-  
+struct GLI::stAnimatedTextureNode {
+  CPA_ALLOCATOR
 };
 
-struct GLI::stMultiTextureMaterial: structure {
+struct MultiMaterialTransform {
+  float32 matrix[2][2];
+  float32 translation[2];
+};
+
+struct GLI::stMultiTextureMaterial {
   pointer<stTexture> texture;
   uint8 textureOp;
   uint8 colorOp;
   uint8 uvSource;
   uint8 flags;
   uint32 textureProperties;
-  /* ... */
+  struct MultiMaterialTransform staticPosition;
+  struct MultiMaterialTransform dynamicPosition;
+  float32 dynamicAngle;
+  float32 stticAngle;
+  uint32 materialFunction;
   
+  CPA_ALLOCATOR
 };
 
-struct GLI::stMaterial: structure {
+struct GLI::stMaterial {
   uint32 type;
   GEO::stColor ambientColor;
   GEO::stColor diffuseColor;
@@ -3225,17 +3373,19 @@ struct GLI::stMaterial: structure {
   uint32 multiTextureType;
   uint32 numTextureStages;
   stMultiTextureMaterial multiTextureMaterial[4];
+  CPA_ALLOCATOR
 };
 
 #pragma mark - WP
 
-struct WP::stWayPoint: structure {
+struct WP::stWayPoint {
   MTH::stVector3D point;
   float32 radius;
   pointer<stSuperObject> superobject;
+  CPA_ALLOCATOR
 };
 
-struct WP::stGraphNode: structure {
+struct WP::stGraphNode {
   pointer<stGraphNode> next;
   pointer<stGraphNode> prev;
   pointer<stGraph> graph;
@@ -3243,29 +3393,34 @@ struct WP::stGraphNode: structure {
   int32 waypointType;
   int32 waypointTypeInitial;
   pointer<> arcList;
+  CPA_ALLOCATOR
 };
 
-struct WP::stGraph: structure {
+struct WP::stGraph {
   stDoublyLinkedList<stGraphNode> nodes;
+  CPA_ALLOCATOR
 };
 
-struct WP::stGraphChainList: structure {
+struct WP::stGraphChainList {
   pointer<stGraph> graph;
   pointer<stGraphChainList> next;
+  CPA_ALLOCATOR
 };
 
 
 #pragma mark - MS
 
-struct MS::stMSWay: structure {
+struct MS::stMSWay {
   pointer<WP::stGraph> graph;
   int32 index;
   uint8 spherical;
   padding(3)
+  
+  CPA_ALLOCATOR
 };
 
-struct MS::stMSSound: structure {
-  
+struct MS::stMSSound {
+  CPA_ALLOCATOR
 };
 
 #pragma mark - SND
@@ -3278,22 +3433,32 @@ using Real = float32;
 struct stBlockEntry;
 struct stLinkTableEntry;
 struct stTypeInfo;
+
 }
 
-struct SND::stLinkTableEntry: structure {
+#define SND_EventType_Play  0
+#define SND_EventType_Stop  1
+
+//enum SND::StorageType {
+//  ExternalFile = 0,
+//  MegaFile = 1,
+//  BigFile = 2,
+//};
+
+struct SND::stLinkTableEntry {
   uint32 id;
   uint64 cuuid;
 };
 
 /// An element chosen randomly
-struct SND::stRandomElement: structure {
+struct SND::stRandomElement {
   /// Link to the resource
   SND::Ref resourceLink;
   /// The probability of this element being chosen
   float32 probability;
 };
 
-struct SND::stSwitchElement: structure {
+struct SND::stSwitchElement {
   /// Link to the resource
   SND::Ref resourceLink;
   /// Index of this element
@@ -3307,11 +3472,11 @@ struct SND::stSwitchElement: structure {
 //  float32 probability;
 //};
 
-struct SND::stDeTune: structure {
+struct SND::stDeTune {
   float32 panning;
 };
 
-struct SND::stEventParametersExtraAll: structure {
+struct SND::stEventParametersExtraAll {
   CUUID link;
   float32 pitch;
   float32 volume;
@@ -3336,27 +3501,53 @@ union SND::stEventParameters {
 //  stEventParameters param;
 //};
 
-struct SND::stBlockEvent: structure {
-  /// Event identifier
-  pointer<> unknown;
-  ///
-  uint64 cuuid;
+//struct SND::stBlockEvent {
+//  /// Event identifier
+//  pointer<> unknown;
+//  ///
+//  uint64 cuuid;
+//  /// Event type
+//  uint32 type;
+//  /// Unknown
+//  uint32 unknown2;
+//  /// Parameters
+//  stEventParameters param;
+//  /// Event resource
+//  //pointer<>
+//};
+
+
+struct SND::stBlockEvent {
+  /// Event identifier (classname)
+  uint32 id;
   /// Event type
   uint32 type;
-  /// Unknown
-  uint32 unknown2;
   /// Parameters
   stEventParameters param;
-  /// Event resource
-  //pointer<>
 };
 
-struct SND::stTypeInfo: structure {
+
+struct SND::stTypeInfo {
   /// Name of this type
   pointer<string<>> name;
 };
 
-struct SND::stBlockEntry: structure {
+//union SND::stResource {
+//  
+//};
+//
+//struct SND::stBlockResource {
+//  /// The unique identifier of this resource
+//  CUUID cuuid;
+//  /// Resource type
+//  uint32 type;
+//  /// Unknown
+//  uint32 unknown1;
+//  /// Unknown
+//  ///
+//};
+
+struct SND::stBlockEntry {
   /// Pointer to entry type information
   doublepointer<stTypeInfo> typeInfo;
   /// The unique identifier of this entry
@@ -3373,701 +3564,24 @@ struct SND::stBlockEntry: structure {
   pointer<> linkData;
 };
 
-/***********************/
-/** ``STRUCTURE END`` **/
-/***********************/
-
 #pragma pack(pop)
 
 #undef padding
 #undef concat_inner
 #undef unique_name
 #undef concat
-
-
-#pragma mark - Function -
-
-/************************/
-/** ``FUNCTION BEGIN`` **/
-/************************/
-
-namespace global {
-auto objectTypeNameLookup(int type, int idx) -> std::string;
-};
-
-#pragma mark EngineStructure
-
-auto stEngineStructure::loadLevel(std::string levelName) -> void {
-  nextLevelName = levelName;
-  mode = EngineMode::ChangeLevel;
-}
-
-#pragma mark EngineObject
-
-auto stEngineObject::name(ObjectType type) -> std::string {
-  std::string name;
-  for (int i : {stdGame->instanceType, stdGame->modelType, stdGame->familyType})
-    if ((name = global::objectTypeNameLookup(type, i)) != "Invalid name") break;
-  return name;
-}
-/// Get the superobject associated with this actor
-auto stEngineObject::superobject() -> pointer<stSuperObject> {
-  return stdGame->superObject;
-}
-
-/// Return the AI model of this actor
-auto stEngineObject::aiModel() -> pointer<AI::stAIModel> {
-  return brain->mind->aiModel;
-}
-
-/// Get the dsg variable memory
-auto stEngineObject::dsgMem() -> pointer<AI::stDsgMem> {
-  return brain->mind->dsgMem;
-}
-
-auto stEngineObject::dsgVar(int idx, uint32_t* type) -> pointer<> {
-  try {
-    pointer<AI::stDsgMem> mem = brain->mind->dsgMem;
-    if (idx > (*mem->dsgVars)->infoLength) return nullptr;
-    pointer<AI::stDsgVarInfo> info = mem->dsgVarInfo(idx);
-    if (type) *type = info->type;
-    return (uint8_t*)mem->currentBuffer + info->memoryOffset;
-  } catch (bad_pointer& e) {
-    return nullptr;
-  }
-}
-
-auto stEngineObject::speed() -> MTH::stVector3D {
-  try {
-    return dynam->dynamics->base.previousSpeed;
-  } catch (bad_pointer& e) {
-    return MTH::stVector3D(0.0f, 0.0f, 0.0f);
-  }
-}
-
-auto stEngineObject::horizontalSpeed() -> float {
-  auto s = speed();
-  return sqrt(s.x() * s.x() + s.y() * s.y());
-}
-
-auto stEngineObject::verticalSpeed() -> float {
-  return speed().z();
-}
-
-#pragma mark SuperObject
-
-auto stSuperObject::typeName() -> std::string {
-  switch (type) {
-    case None:
-      return "Dummy SuperObject";
-    case World:
-      return "World";
-    case Actor:
-      return "Actor";
-    case Sector:
-      return "Sector";
-    case PhysicalObject:
-      return "PhysicalObject";
-    case PhysicalObjectMirror:
-      return "PhysicalObject.Mirror";
-    case IPO:
-      return "IPO";
-    case IPOMirror:
-      return "IPO.Mirror";
-    case SpecialEffect:
-      return "SpecialEffect";
-    case NoAction:
-      return "NoAction";
-    case Mirror:
-      return "Mirror";
-    default:
-      return "Invalid";
-  }
-}
-
-auto stSuperObject::name(bool fullname) -> std::string {
-  try {
-    switch (type) {
-      case Actor:
-        return actor->name();
-      case IPO:
-        return fullname ? ipo->name : ipo->name.lastPathComponent();
-      case Sector:
-        return fullname ? sector->name : sector->name.lastPathComponent();
-      default:
-        return typeName();
-    }
-  } catch (bad_pointer& e) {
-    return "";
-  }
-}
-
-auto stSuperObject::position() -> MTH::stVector3D& {
-  try {
-    return globalTransform->translation();
-  } catch (bad_pointer& e) {
-    return globalTransform->translation();
-  }
-}
-
-#pragma mark - ZdxList
-
-auto COL::stZdxList::all() -> std::vector<pointer<stCollideObject>> {
-  assert(list.numEntries == numZdx); //should never happen
-  std::vector<pointer<stCollideObject>> objects;
-  list.forEach([&](pointer<stZdxListEntry> entry, void*) { objects.emplace_back(entry->data); });
-  return objects;
-}
-
-#pragma mark - Static functions
-
-/// Determine the sector of a world-space point
-static inline auto sectorSearch(pointer<stSuperObject> fatherSector, MTH::stVector3D point) -> pointer<stSuperObject> {
-  try {
-    float dNear = INFINITY;
-    float dCurrent = INFINITY;
-    float dVirtual = INFINITY;
-    int8 p = SECT::stSector::priority::Min;
-    int8 v = SECT::stSector::priority::Max;
-    
-    pointer<stSuperObject> targetSector = nullptr;
-    pointer<stSuperObject> targetSectorVirtual = nullptr;
-    
-    fatherSector->forEachChild([&](pointer<stSuperObject> object, void*) {
-      pointer<SECT::stSector> sector = object->sector;
-      MTH::stVector3D min = sector->min;
-      MTH::stVector3D max = sector->max;
-      
-      if (point >= min && point <= max) {
-        MTH::stVector3D distance = (min + max) / 2.0f - point;
-        dNear = distance.length();
-        
-        if (!sector->isVirtual) {
-          if (sector->priority > p) {
-            targetSector = object;
-            dCurrent = dNear;
-            p = sector->priority;
-          } else if (sector->priority == p && dNear < dCurrent) {
-            targetSector = object;
-            dCurrent = dNear;
-          }
-        } else {
-          if (sector->priority > v) {
-            targetSectorVirtual = object;
-            dVirtual = dNear;
-            v = sector->priority;
-          } else if (sector->priority == v && dNear < dVirtual) {
-            targetSectorVirtual = object;
-            dVirtual = dNear;
-          }
-        }
-      }
-    });
-    
-    if (!targetSector) targetSector = targetSectorVirtual;
-    if (!targetSector) targetSector = fatherSector->lastChild; // UNIVERS
-    return targetSector;
-  } catch (...) {
-    return nullptr;
-  }
-}
-
-/**********************/
-/** ``FUNCTION END`` **/
-/**********************/
-
 #undef s
 
-
-#pragma mark - Script -
-
-namespace script {
-
-using node = AI::stNodeInterpret;
-
-enum nodetype : uint8_t {
-  Keyword           = 0,
-  Condition         = 1,
-  Operator          = 2,
-  Function          = 3,
-  Procedure         = 4,
-  MetaAction        = 5,
-  BeginMacro        = 6,
-  BeginMacro2       = 7,
-  EndMacro          = 8,
-  Field             = 9,
-  DsgVarRef         = 10,
-  DsgVarRef2        = 11,
-  Constant          = 12,
-  Real              = 13,
-  Button            = 14,
-  ConstantVector    = 15,
-  Vector            = 16,
-  Mask              = 17,
-  ModuleRef         = 18,
-  DsgVarID          = 19,
-  String            = 20,
-  LipsSynchroRef    = 21,
-  FamilyRef         = 22,
-  ActorRef          = 23,
-  ActionRef         = 24,
-  SuperObjectRef    = 25,
-  SOLinksRef        = 26, // ?
-  WaypointRef       = 27,
-  TextRef           = 28,
-  BehaviorRef       = 29,
-  ModuleRef2        = 30,
-  SoundEventRef     = 31,
-  ObjectTableRef    = 32,
-  GameMaterialRef   = 33,
-  VisualMaterial    = 34,
-  ParticleGenerator = 35,
-  ModelRef          = 36,
-  ModelRef2         = 37,
-  CustomBits        = 38,
-  Caps              = 39,
-  Graph             = 40, // ?
-  Subroutine        = 41,
-  Null              = 42,
-  CineRef           = 43, // ?
-  GraphRef          = 44,
-};
-
-struct TranslationToken {
-  // TranslationToken(const char* text, pointer<Node> originalNode = nullptr);
-  TranslationToken(std::string text, node *originalNode = nullptr) {
-    this->text = text;
-    this->originalNode = originalNode;
-  }
-  /// Mode: Tree -> Source
-  ///   Text string of the generated token
-  std::string text;
-  /// Mode: Tree -> Source
-  ///   A description of the token symbol
-  std::string description;
-  /// Mode: Tree -> Source
-  ///   The original script node from which this token was generated
-  node *originalNode = nullptr;
-  /// Mode: Source -> Tree
-  ///   Output node
-  node node;
-  /// equals
-  bool operator ==(TranslationToken other) { return text == other.text; }
-};
-
-enum TranslationMode {
-  TreeToSource,
-  SourceToTree,
-};
-
-struct TranslationOptions {
-  /// Mode: Tree -> Source
-  ///   Remove parentheses which do not affect the control flow of the program.
-  bool removeUnnecessaryParentheses;
-  /// Mode: Tree -> Source
-  ///   Replace macrorefs with their respective source trees
-  bool expandMacroReferences;
-  
-  std::vector<std::string> conditionTable;
-  std::vector<std::string> functionTable;
-  std::vector<std::string> procedureTable;
-  std::vector<std::string> metaActionTable;
-  std::vector<std::string> fieldTable;
-};
-
-enum TranslationTokenType {
-  Default,
-  Space,
-};
-
-struct TranslationResult {
-  TranslationResult(TranslationMode mode) : mode(mode) {};
-  TranslationMode mode;
-  TranslationOptions options;
-  std::vector<TranslationToken> tokens;
-};
-
-struct TranslationEngine;
-
-struct TranslationContext {
-  TranslationContext(pointer<node> tree, std::function<void(TranslationContext&)> fn, TranslationEngine *e) : currentNode(tree), function(fn), _engine(e) {
-    /* ... */
-  }
-  
-  TranslationEngine *_engine;
-  
-  template <typename ... Args>
-  void emit(bool condition, Args ...args) {
-    if (condition) {
-      for (const auto v : { args... }) {
-        std::string str = v;
-        pointer<node> *targetNode = nullptr;
-        if (str.starts_with(":")) {
-          // *targetNode = currentNode;
-          str = str.substr(1, std::string::npos);
-        }
-        
-        
-        TranslationToken tok(str, std::string(v).starts_with(":") ? (node*)currentNode : nullptr);
-        tokens.push_back(tok);
-        
-        if (str == "\n") {
-          for (int i = 0; i < indentationLevel; i++) {
-            TranslationToken tok("  ", nullptr);
-            tokens.push_back(tok);
-          }
-        }
-      }
-    }
-  }
-  
-  void indent(bool condition, int off) {
-    if (condition) {
-      indentationLevel += off;
-    }
-  }
-  
-  uint32_t param() { return currentNode->param; }
-  operator uint32_t() { return currentNode->param; }
-  bool done() { return currentNode->type == nodetype::EndMacro || currentNode->depth == 0; }
-  
-  pointer<node> firstNode;
-  pointer<node> currentNode;
-  int indentationLevel = 0;
-  
-  void child(bool condition, int child = 0) {
-    if (condition) {
-      pointer<node> orig = currentNode;
-      pointer<node> node = currentNode + 1;
-      uint8_t min = currentNode->depth, occ = 0;
-      while (node->type != nodetype::EndMacro && node->depth > min) {
-        if (node->depth == min + 1 && occ++ == child) {
-          currentNode = node;
-          function(*this);
-          break;
-        }
-        node++;
-      }
-      currentNode = orig;
-    }
-  }
-  
-  void branch(bool args = false) {
-    pointer<node> orig = currentNode;
-    pointer<node> node = currentNode + 1;
-    uint8_t depth = currentNode->depth + 1, numArgs = 0;
-    while (node->type != nodetype::EndMacro && node->depth >= depth) {
-      if (node->depth == depth) {
-        currentNode = node;
-        function(*this);
-        
-        // Argument separator
-        if (args) {
-          numArgs++;
-          emit(true, ",", " ");
-        }
-      }
-      node++;
-    }
-    
-    if (numArgs >= 1) {
-      tokens.pop_back();
-      tokens.pop_back();
-    }
-    
-    currentNode = orig;
-  }
-  
-  bool isEnd(pointer<node> node) {
-    return node->type == EndMacro || node->depth == 0;
-  }
-  
-  void seekNextDepth() {
-    uint8_t depth = currentNode->depth;
-    if (isEnd(currentNode++))
-      return;
-    while (!isEnd(currentNode) && currentNode->depth != depth)
-      currentNode++;
-  }
-  
-  void translate() {
-    function(*this);
-  }
-  
-  std::vector<TranslationToken> tokens;
-  std::function<void(TranslationContext&)> function;
-  
-  std::vector<std::string> conditionTable;
-  std::vector<std::string> functionTable;
-  std::vector<std::string> procedureTable;
-  std::vector<std::string> fieldTable;
-  std::vector<std::string> metaActionTable;
-};
-
-static void keyword(TranslationContext& s) {
-  s.emit(s >= 0 && s <= 15, ":if", " ");
-  s.emit(s == 1 || s == 15, "!", "(");
-  s.emit(s == 14, "#debug");
-  s.emit(s == 15, "defined", "(", "U64", ")");
-  s.emit(s >= 2 && s <= 13, "framerule", " ", "%", " ", std::to_string(1 << (s.param() - 1)).c_str(), " ", s <= 7 ? "==" : "!=", " ", "0");
-  s.emit(s >= 2 && s <= 15, " ", "&&", " ");
-  s.child(s >= 0 && s <= 15);
-  //s.emit(s >= 0 && s <= 15, " ");
-  s.emit(s == 1 || s == 15, ")");
-  
-  s.emit(s == 17, ":else", " ");
-  s.emit(s == 16 || s == 17, "\n", "{");
-  s.indent(s == 16 || s == 17, +1);
-  s.emit(s == 16 || s == 17, "\n");
-  if (s == 16 || s == 17) s.branch();
-  if ((s == 16 || s == 17)) {
-    s.indent(s == 16 || s == 17, -1);
-    s.tokens.pop_back();
-  }
-  s.emit(s == 16 || s == 17, "}", "\n");
-  
-  s.emit(s == 19, "self");
-  s.emit(s == 20, "MainActor");
-}
-
-static void condition(TranslationContext& s) {
-  //printf("condition: %d %X\n", s.currentNode->type, (uint32_t)s.currentNode->param);
-  s.emit(s == 2, "!", "(");
-  s.child(s <= 9, 0);
-  s.emit(s != 2 && s <= 9, " ");
-  s.emit(s == 0, ":&&");
-  s.emit(s == 1, ":||");
-  s.emit(s == 3, ":^");
-  s.emit(s == 4, ":==");
-  s.emit(s == 5, ":!=");
-  s.emit(s == 6, ":<");
-  s.emit(s == 7, ":>");
-  s.emit(s == 8, ":<=");
-  s.emit(s == 9, ":>=");
-  s.emit(s != 2 && s <= 9, " ");
-  s.emit(s >= 10, std::string(":" + s.conditionTable[s.param()]).c_str(), "(");
-  s <= 9 ? s.child(true, 1) : s.branch(true);
-  s.emit(s == 2 || s >= 10, ")");
-  //s.emit(true, " ");
-}
-
-static void _operator(TranslationContext& s) {
-  s.emit(s == 4 || s == 19, "-");
-  s.emit(s <= 4 || (s >= 17 && s <= 21 && s != 19), "(");
-  s.emit(s == 26, "(");
-  s.child(s <= 27, 0);
-  s.emit(s == 0, " ", ":+", " ");
-  s.emit(s == 1, " ", ":-", " ");
-  s.emit(s == 2, " ", ":*", " ");
-  s.emit(s == 3, " ", ":/", " ");
-  s.emit(s == 5, " ", ":%%", " ");
-  s.emit(s == 6, " ", ":+=", " ");
-  s.emit(s == 7, " ", ":-=", " ");
-  s.emit(s == 8, " ", ":*=", " ");
-  s.emit(s == 9, " ", ":/=", " ");
-  s.emit(s == 10, ":++", ";", "\n");
-  s.emit(s == 11, ":--", ";", "\n");
-  s.emit(s == 12, " ", ":=", " ");
-  s.emit(s == 13, ":.");
-  s.emit(s == 14, ".", ":X"); // vector x
-  s.emit(s == 15, ".", ":Y"); // vector y
-  s.emit(s == 16, ".", ":Z"); // vector z
-  s.emit(s == 17, " ", ":+", " "); // vector + vector
-  s.emit(s == 18, " ", ":-", " "); // vector - vector
-  s.emit(s == 20, " ", ":*", " "); // vector * scalar
-  s.emit(s == 21, " ", ":/", " "); // vector / scalar
-  s.emit(s == 22, ".", ":X", " ", "="); // vector.x = s
-  s.emit(s == 23, ".", ":Y", " ", "="); // vector.x = s
-  s.emit(s == 24, ".", ":Z", " ", "="); // vector.x = s
-  s.emit(s == 25, "."); // 'ultra'
-  s.emit(s == 26, ")", "("); // modelcast
-  s.emit(s == 27, "["); // array access
-  
-  s.child(s <= 27 && s != 4 && s != 10 && s != 11 && !(s >= 14 && s <= 16) && s != 19, 1);
-  s.emit(s == 26, ")", ")"); // modelcast
-  s.emit(s == 27, "]"); // array access
-  s.emit(s <= 4 || (s >= 17 && s <= 21 && s != 19), ")");
-  s.emit(s == 12 || (s >= 6 && s <= 9) || (s >= 22 && s <= 23), ";", "\n");
-}
-
-static void function(TranslationContext& s) {
-  s.emit(true, std::string(":" + s.functionTable[s.param()]).c_str(), "(");
-  s.branch(true);
-  s.emit(true, ")");
-}
-
-static void procedure(TranslationContext& s) {
-  s.emit(true, std::string(":" + s.procedureTable[s.param()]).c_str(), "(");
-  s.branch(true);
-  s.emit(true, ")", ";", "\n");
-}
-
-static void metaAction(TranslationContext& s) {
-  s.emit(true, std::string(":" + s.metaActionTable[s.param()]).c_str(), "(");
-  s.branch(true);
-  s.emit(true, ")", ";", "\n");
-}
-
-static void field(TranslationContext& s) {
-  s.emit(true, (":" + s.fieldTable[s.param()]).c_str());
-}
-
-static void dsgvar(TranslationContext& s) {
-  s.emit(true, (std::string(":DsgVar_") + std::to_string(s.param())).c_str());
-}
-
-static void constant(TranslationContext& s) {
-  s.emit(true, (":" + std::to_string((int32_t)s.param())).c_str());
-}
-
-static void real(TranslationContext& s) {
-  uint32_t p = s.param();
-  char buf[64];
-  std::sprintf(buf, ":%.5gf", *(float*)&p);
-  
-  s.emit(true, std::string(buf).c_str());
-}
-
-static void vector(TranslationContext& s) {
-  s.emit(true, ":Vector", "(");
-  s.branch(true);
-  s.emit(true, ")");
-}
-
-static void button(TranslationContext& s) {
-  // s.emit(true, "", )
-}
-
-static void _string(TranslationContext& s) {
-  const char *str = pointer<string<>>(s.param());
-  s.emit(true, "\"", (":" + std::string(str)).c_str(), "\"");
-}
-
-static void reference(TranslationContext& s) {
-  s.emit(true, ":" + std::to_string(s.param()));
-}
-
-static void subroutine(TranslationContext& s) {
-  //  if (s.engine->options.expandMacroReferences) {
-  //    pointer<structure::stMacro> macro = pointer<structure::stMacro>(s.param());
-  //    TranslationEngine t(s.engine->options);
-  //    TranslationResult *result = t.translate(nullptr, macro->currentTree->node);
-  //
-  //    for (TranslationToken& tok : result->tokens) {
-  //      s.tokens.push_back(tok);
-  //    }
-  //  } else {
-  s.emit(true, std::string(":" + std::to_string(s.param())).c_str(), "(", ")", ";", "\n");
-  // }
-}
-
-static void null(TranslationContext& s) {
-  s.emit(true, ":NULL");
-}
-
-static std::map<int, std::function<void(TranslationContext& s)>> TranslationTable {
-  { nodetype::Keyword, &keyword },
-  { nodetype::Condition, &condition },
-  { nodetype::Operator, &_operator },
-  { nodetype::Function, &function },
-  { nodetype::Procedure, &procedure },
-  { nodetype::MetaAction, &metaAction },
-  { nodetype::BeginMacro, nullptr },
-  { nodetype::BeginMacro2, nullptr },
-  { nodetype::EndMacro, nullptr },
-  { nodetype::Field, &field },
-  { nodetype::DsgVarRef, &dsgvar },
-  { nodetype::DsgVarRef2, &dsgvar },
-  { nodetype::Constant, &constant },
-  { nodetype::Real, &real },
-  { nodetype::Button, nullptr },
-  { nodetype::ConstantVector, &vector },
-  { nodetype::Vector, &vector },
-  { nodetype::Mask, nullptr },
-  { nodetype::ModuleRef, nullptr },
-  { nodetype::DsgVarID, nullptr },
-  { nodetype::String, &_string },
-  { nodetype::LipsSynchroRef, &reference },
-  { nodetype::FamilyRef, &reference },
-  { nodetype::ActorRef, &reference},
-  { nodetype::ActionRef, &reference },
-  { nodetype::SuperObjectRef, &reference },
-  { nodetype::SOLinksRef, &reference },
-  { nodetype::WaypointRef, &reference },
-  { nodetype::TextRef, &reference },
-  { nodetype::BehaviorRef, &reference },
-  { nodetype::ModuleRef2, &reference },
-  { nodetype::SoundEventRef, &reference },
-  { nodetype::ObjectTableRef, &reference },
-  { nodetype::GameMaterialRef, &reference },
-  { nodetype::VisualMaterial, nullptr },
-  { nodetype::ParticleGenerator, nullptr },
-  { nodetype::ModelRef, nullptr },
-  { nodetype::ModelRef2, nullptr },
-  { nodetype::CustomBits, nullptr },
-  { nodetype::Caps, nullptr },
-  { nodetype::Graph, nullptr },
-  { nodetype::Subroutine, &subroutine },
-  { nodetype::Null, &null },
-  { nodetype::CineRef, nullptr },
-  { nodetype::GraphRef, nullptr },
-};
-
-static void NodeTranslate(TranslationContext& s) {
-  //printf("node: %d %d %d\n", s.currentNode->type, (uint32_t)s.currentNode->param, s.currentNode->depth);
-  pointer<node> node = s.currentNode;
-  if (TranslationTable.find(node->type) != TranslationTable.end()) {
-    if (TranslationTable[node->type] != nullptr)
-      TranslationTable[node->type](s);
-  }
-  s.seekNextDepth();
-}
-
-/// Context for script translation
-struct TranslationEngine {
-  
-  TranslationEngine(TranslationOptions opt) : options(opt) {
-    /* ... */
-  }
-  
-  TranslationResult *translate(pointer<stSuperObject> actor, pointer<node> tree) {
-    initialNode = tree;
-    TranslationContext s(tree, NodeTranslate, this);
-    s.conditionTable = options.conditionTable;
-    s.functionTable = options.functionTable;
-    s.procedureTable = options.procedureTable;
-    s.metaActionTable = options.metaActionTable;
-    s.fieldTable = options.fieldTable;
-    
-    while (!s.done())
-      s.translate();
-    
-    TranslationResult *result = new TranslationResult(TranslationMode::TreeToSource);
-    result->tokens = s.tokens;
-    return result;
-  }
-  
-  TranslationResult *translate(pointer<stSuperObject> actor, std::string source) {
-    TranslationResult *result = new TranslationResult(TranslationMode::SourceToTree);
-    return result;
-  }
-  
-  
-  TranslationOptions options;
-  
-  TranslationMode mode;
-  pointer<node> initialNode;
-  pointer<node> currentNode;
-};
-
-}; /* script */
+/***********************/
+/** ``STRUCTURE END`` **/
+/***********************/
 
 
 #pragma mark - Memory stream
 
 // TODO: Move this to top
 
-namespace memory {
+namespace Memory {
 struct stream {
   stream() = default;
   enum mode { read, write };
@@ -4114,653 +3628,71 @@ struct stream {
 
 }
 
-#pragma mark - Format -
-
-namespace format {
-
-struct ptr {
-  using FileID = int;
-  static constexpr FileID FileID_FIX = 0;
-  static constexpr FileID FileID_LVL = 1;
-  static constexpr FileID FileID_KF  = 2;
-  static constexpr FileID FileID_VB  = 3;
-  
-  const std::map<FileID, std::string> fileIDName {
-    {FileID_FIX, "fix"},
-    {FileID_LVL, "lvl"},
-    {FileID_KF, "kf"},
-    {FileID_VB, "vb"}
-  };
-  
-  struct FileIDPointerPair {
-    FileID fileID;
-    uint32 pointer;
-  };
-  
-  ptr(memory::stream& s) {
-    assert(s.mode == memory::stream::mode::read);
-    
-    uint32 numPointers;
-    s.rw(numPointers);
-    for (auto i : range(numPointers)) {
-      uint32_t fileID, pointer;
-      s.rw(fileID);
-      s.rw(pointer);
-      pointer += 4;
-      pointers.emplace_back(FileIDPointerPair {static_cast<FileID>(fileID), pointer});
-    }
-    
-    size_t numFillInPointers = (s.size - s.pos) / 16;
-    for (auto i : range(numFillInPointers)) {
-      uint32_t doublePointer;
-      uint32_t sourceFileID;
-      uint32_t fillInPointer;
-      uint32_t targetFileID;
-      
-      s.rw(doublePointer);
-      s.rw(sourceFileID);
-      s.rw(fillInPointer);
-      s.rw(targetFileID);
-      
-      FileIDPointerPair src { static_cast<FileID>(sourceFileID), doublePointer };
-      FileIDPointerPair dst { static_cast<FileID>(sourceFileID), doublePointer };
-      fillInpointers.emplace_back(std::make_pair(src, dst));
-    }
-  }
-  
-  std::string name;
-  std::vector<FileIDPointerPair> pointers;
-  std::vector<std::pair<FileIDPointerPair, FileIDPointerPair>> fillInpointers;
-}; /* ptr */
-
-struct lvl {
-  
-  lvl(const std::filesystem::path path) {
-    
-  }
-  
-  
-}; /* lvl */
-
-// R3 engine version sound description file
-// Formats: .HXC, .HX2 .HXG, .HXX, .HX3, .HXP, .HXB
-namespace hx {
-#define HX_STRING_MAX_LENGTH  0x100
-/// It's a string.
-using string = char[HX_STRING_MAX_LENGTH];
-/// Unique 64-bit entry identifier
-using cuuid = uint64;
-/// Language code
-using language_code = uint32;
-
-static constexpr auto LanguageDE = 0x64652020;
-static constexpr auto LanguageEN = 0x656E2020;
-static constexpr auto LanguageES = 0x65732020;
-static constexpr auto LanguageFR = 0x66722020;
-static constexpr auto LanguageIT = 0x69742020;
-
-enum version {
-  hxd, ///< M/Arena
-  hxc, ///< R3 PC
-  hx2, ///< R3 PS2
-  hxg, ///< R3 GCN
-  hxx, ///< R3 XBOX (+HD)
-  hx3, ///< R3 PS3 HD
-  hxp, ///< Sound program driver
-  hxb, ///< Sound program driver
-};
-
-enum audio_format {
-  pcm = 0x01, ///< PCM s16
-  ubi = 0x02, ///< UBI ADPCM
-  psx = 0x03, ///< PS ADPCM
-  dsp = 0x04, ///< GC 4-bit ADPCM
-  ima = 0x05, ///< MS IMA ADPCM
-  mp3 = 0x55, ///< MPEG.3
-};
-
-struct entry {
-  hx::cuuid cuuid;
-  std::string class_;
-  void *data;
-
-  struct language_link {
-    hx::cuuid cuuid;
-    float32 unknown;
-    language_code language;
-  };
-
-  std::vector<hx::cuuid> links;
-  std::vector<language_link> languageLinks;
-
-//private:
-  uint32 _file_offset;
-  uint32 _file_size;
-  uint32 _tmp_file_size;
-};
-
-struct context {
-  static constexpr auto IndexCode = 0x58444E49;
-  static constexpr auto ExternalFile = 0;
-  static constexpr auto MegaFile = 1;
-  static constexpr auto BigFile = 2;
-  
-  context(std::filesystem::path path) {
-    workDirectory = path;
-    workDirectory.remove_filename();
-    
-    size_t sz = SIZE_MAX;
-    void* data = fileRead(path, 0, sz);
-    
-    stream = memory::stream(memory::stream::mode::read, data, sz);
-    
-    uint32 indexCode = IndexCode;
-    uint32 indexOffset = 0;
-    uint32 indexType = 2;
-    uint32 numEntries = entries.size();
-    
-    if (stream.mode == memory::stream::read) {
-      stream.rw(indexOffset);
-      stream.seek(indexOffset);
-    }
-    
-    stream.rw(indexCode);
-    stream.rw(indexType);
-    stream.rw(numEntries);
-    
-    if (indexCode != IndexCode) throw "invalid index header";
-    if (indexType != 1 && indexType != 2) throw "invalid index type";
-    if (numEntries == 0) throw "file contains no entries!";
-    
-    for (auto i : range(numEntries)) {
-      uint32 classnameLength;
-      hx::entry& e = entries[i];
-      
-      char classname[HX_STRING_MAX_LENGTH];
-      if (stream.mode == memory::stream::write) {
-        classnameLength = 0;//hx_class_name(entry->i_class, hx->version, classname, HX_STRING_MAX_LENGTH);
-      }
-      
-      stream.rw(classnameLength);
-      stream.string(classname, classnameLength);
-      
-      if (stream.mode == memory::stream::read) {
-        e.class_ = std::string(classname, classnameLength);
-        //e.i_class = classFromString(classname);
-        //entry->i_class = hx_class_from_string(classname);
-      }
-      
-      uint32 zero = 0;
-      stream.rw(e.cuuid);
-      stream.rw(e._file_offset);
-      stream.rw(e._file_size);
-      stream.rw(zero);
-      
-      uint32 numLinks = e.links.size();
-      uint32 numLanguageLinks = e.languageLinks.size();
-      stream.rw(numLinks);
-      
-      printf("%016llX\n", (uint64_t)e.cuuid);
-      
-      assert(zero == 0);
-      
-      if (indexType == 2) {
-        if (stream.mode == memory::stream::read) {
-          e.links.resize(numLinks);
-        }
-        
-        for (auto l : range(numLinks)) {
-          stream.rw(e.links[l]);
-        }
-        
-        stream.rw(numLanguageLinks);
-        if (stream.mode == memory::stream::read) {
-          e.languageLinks.resize(numLanguageLinks);
-        }
-        
-        for (auto l : range(numLanguageLinks)) {
-          stream.rw(e.languageLinks[l].language);
-          stream.rw(e.languageLinks[l].unknown);
-          stream.rw(e.languageLinks[l].cuuid);
-        }
-      }
-      
-      memory::stream::position_t p = stream.pos;
-      if (stream.mode == memory::stream::read) {
-        stream.seek(e._file_offset);
-      }
-      
-      if (!entryRW(e)) {
-        printf("failed to %s entry %016llX", stream.mode == memory::stream::read ? "read" : "write", uint64_t(e.cuuid));
-      }
-      
-      if (stream.mode == memory::stream::read) {
-        stream.seek(p);
-      }
-      
-    }
-    
-    
-    
-    
-  }
-  
-  ~context() {
-    for (auto& p : fileMap) delete p.second;
-  }
-  
-  #define EntryData(T) \
-    (T*)(entry.data = (hx.stream.mode == memory::stream::mode::write ? entry.data : malloc(sizeof(*data))))
-
-  static void EntryName(context& hx) {
-    if (hx.stream.mode == memory::stream::read) {
-       
-    } else if (hx.stream.mode == memory::stream::write) {
-      
-    }
-  }
-  
-  static int EventResData(context& hx, entry& entry) {
-    SND::stBlockEvent *data = EntryData(SND::stBlockEvent);
-    EntryName(hx);
-    //unsigned int name_length = strlen(data->name);
-  //  stream_rw32(&hx->stream, &data->type);
-  //  stream_rw32(&hx->stream, &name_length);
-  //  stream_rw(&hx->stream, &data->name, name_length);
-  //  stream_rw32(&hx->stream, &data->flags);
-  //  stream_rwcuuid(&hx->stream, &data->link);
-  //  stream_rwfloat(&hx->stream, data->c + 0);
-  //  stream_rwfloat(&hx->stream, data->c + 1);
-  //  stream_rwfloat(&hx->stream, data->c + 2);
-  //  stream_rwfloat(&hx->stream, data->c + 3);
-    return 0;
-  }
-
-  struct classinfo { std::function<void(context&, entry&)> rw; bool global; };
-  std::map<std::string, classinfo> ClassMap {
-    {"EventResData", {&EventResData, true}},
-    {"WavResData", {nullptr, true}},
-    {"SwitchResData", {nullptr, true}},
-    {"RandomResData", {nullptr, true}},
-    {"ProgramResData", {nullptr, true}},
-    {"WaveFileIdObj", {nullptr, true}},
-  };
-  
-  
-  bool entryRW(entry &e) {
-    string classname;
-    memset(classname, 0, sizeof classname);
-    uint32 classnameLength = 0;
-    //if (stream.mode == STREAM_MODE_WRITE) classname_length = hx_class_name(entry->i_class, hx->version, classname, HX_STRING_MAX_LENGTH);
-    stream.rw(classnameLength);
-    
-    if (stream.mode == memory::stream::read)
-      memset(classname, 0, classnameLength + 1);
-    stream.string(classname, classnameLength);
-    
-    if (stream.mode == memory::stream::read) {
-      //const enum class_type c = ClassFromString(class);
-      //      const enum class_type c = hx_class_from_string(classname);
-      //      if (hclass != entry->i_class) {
-      //        return hx_error(hx, "header class name does not match index class name (%X != %X)\n", entry->i_class, hclass);
-      //      }
-    }
-    
-    cuuid cuuid = e.cuuid;
-    stream.rw(cuuid);
-    if (cuuid != e.cuuid) {
-      //return hx_error(hx, "header cuuid does not match index cuuid (%016llX != %016llX)\n", entry->i_cuuid, cuuid);
-    }
-    
-    if (ClassMap.find(e.class_) != ClassMap.end()) {
-      classinfo& c = ClassMap[e.class_];
-      c.rw(*this, e);
-    }
-  }
-  
-  /// Add a new entry into this context
-  void addEntry(const entry& e) {
-    entries[e.cuuid] = e;
-  }
-  
-  /// Find an entry by cuuid
-  entry *findEntry(cuuid cuuid) {
-    if (entries.find(cuuid) == entries.end())
-      return NULL;
-    return &entries[cuuid];
-  }
-  
-  
-  void write(std::function<void(std::string path, void* data, size_t size)>) {
-    
-  }
-  
-  inline bool r() { return stream.mode == memory::stream::mode::read; }
-  inline bool w() { return stream.mode == memory::stream::mode::write; }
-  
-private:
-  memory::stream stream;
-  // Entries in this context
-  std::map<cuuid, entry> entries;
-  // The current working directory
-  std::filesystem::path workDirectory;
-  // List of open files, so we don't have to open new ones all the time.
-  std::map<std::filesystem::path, std::fstream*> fileMap;
-  
-//  static const enum class_type classFromString(char* name) {
-//    if (*name++ != 'C') return class_type::Invalid;
-//    if (!std::strncmp(name, "PC", 2)) name += 2;
-//    if (!std::strncmp(name, "GC", 2)) name += 2;
-//    if (!std::strncmp(name, "PS2", 3)) name += 3;
-//    if (!std::strncmp(name, "PS3", 3)) name += 3;
-//    if (!std::strncmp(name, "XBox", 4)) name += 4;
-//    if (!std::strncmp(name, "EventResData", 12)) return class_type::EventResData;
-//    if (!std::strncmp(name, "WavResData", 10)) return class_type::WavResData;
-//    if (!std::strncmp(name, "SwitchResData", 13)) return class_type::SwitchResData;
-//    if (!std::strncmp(name, "RandomResData", 13)) return class_type::RandomResData;
-//    if (!std::strncmp(name, "ProgramResData", 14))return class_type::ProgramResData;
-//    if (!std::strncmp(name, "WaveFileIdObj", 13)) return class_type::WaveFileIdObject;
-//    return class_type::Invalid;
-//  }
-  
-  char* classname(std::string n) {
-    char* data;
-    if (stream.mode == memory::stream::read) {
-      uint32 length;
-      stream.rw(length);
-      size_t sz = length;
-      data = new char[sz];
-      stream.string(data, sz);
-      data[sz] = '\0';
-    } else if (stream.mode == memory::stream::write) {
-      
-    }
-    return data;
-  }
-  
-  std::fstream *openFile(std::filesystem::path p, bool write = false) {
-    std::string filename = workDirectory.string() + p.filename().string();
-    if (fileMap.find(filename) != fileMap.end()) return fileMap[filename];
-    return fileMap[filename] = new std::fstream(filename, std::ios::binary | std::ios::out | (std::ios::in * !write));
-  }
-  
-  void* fileRead(std::filesystem::path path, size_t pos, size_t& size) {
-    std::fstream *fs = openFile(path);
-    if (fs->is_open()) {
-      fs->seekg(0, std::ios_base::end);
-      size_t real_size = fs->tellg();
-      if (size > real_size)
-        size = real_size;
-      fs->seekg(pos);
-      char* data = new char[size];
-      fs->read(data, size);
-      fileMap[path] = fs;
-      return data;
-    }
-  }
-}; /* context */
-
-#undef HX_STRING_MAX_LENGTH
-} /* hx */
-} /* format */
 
 #pragma mark - Pointer constants -
 
-#if platform == GCN
-# define PTR_EngineStructure        0x803E7C0C // struct
-# define PTR_InputStructure         0x8042F5A8 // struct
-# define PTR_FixMemory              0x804334CC
-# define PTR_LevelMemory            0x804334D0
-# define PTR_RandomStructure        0x80436924 // struct
-# define PTR_GhostMode              0x805D8580 // byte
-# define PTR_InactiveDynamicWorld   0x805D8594 // dptr
-# define PTR_FatherSector           0x805D8598 // dptr
-# define PTR_DynamicWorld           0x805D859C // dptr
-# define PTR_ActualWorld            0x805D85A0 // dptr
-// these are probably part of some structure
-# define PTR_MenuSelectionV         0x805D884C
-# define PTR_MenuOptionRumble       0x805D89B0
+namespace Global {
+extern pointer<stAlways> g_stAlways;
+extern pointer<stEngineStructure> g_stEngineStructure;
+extern pointer<stObjectType> g_stObjectTypes;
+extern pointer<LinkedList<stFamilyList>> g_stFamilyList;
+extern pointer<IPT::stInputStructure> g_stInputStructure;
+extern pointer<RND::stRandom> g_stRandomStructure;
+extern pointer<stSuperObject> p_stActualWorld;
+extern pointer<stSuperObject> p_stDynamicWorld;
+extern pointer<stSuperObject> p_stInactiveDynamicWorld;
+extern pointer<stSuperObject> p_stTransitDynamicWorld;
+extern pointer<stSuperObject> p_stFatherSector;
+extern pointer<uint8> g_bGhostMode;
 
-# define PTR_MechanicsObstacleArray 0x805D73F8
-# define PTR_CollisionGV            0x803DC4F4
-# define PTR_GLI_BitmapBuffer       0x80EEFAE8 // dptr
-#endif
+// TODO: Derive globals from levels
+extern pointer<> g_pFixMemory;
+extern pointer<> g_pLevelMemory;
+extern pointer<> g_pTransitMemory;
 
-#pragma mark - Globals -
+extern uint32_t g_lFixMemorySize;
+extern uint32_t g_lLevelMemorySize;
+extern uint32_t g_lTransitMemorySize;
+}
 
-namespace global {
-CPA_EXTERN pointer<stAlways> g_stAlways;
-CPA_EXTERN pointer<stEngineStructure> g_stEngineStructure;
-CPA_EXTERN pointer<stObjectType> g_stObjectTypes;
-CPA_EXTERN pointer<IPT::stInputStructure> g_stInputStructure;
-CPA_EXTERN pointer<RND::stRandom> g_stRandomStructure;
-CPA_EXTERN pointer<stSuperObject> p_stActualWorld;
-CPA_EXTERN pointer<stSuperObject> p_stDynamicWorld;
-CPA_EXTERN pointer<stSuperObject> p_stInactiveDynamicWorld;
-CPA_EXTERN pointer<stSuperObject> p_stFatherSector;
-CPA_EXTERN pointer<uint8> g_bGhostMode;
+#pragma mark -* Constants *-
+
+namespace Constants {
+/// The world's up vector
+const static MTH::stVector3D WorldUp = { 0.0f, 0.0f, 1.0f };
+}
+
+#pragma mark - Functions -
+
+
+
+namespace Global {
+/// Find a sector by position
+pointer<stSuperObject> SectorAtPosition(MTH::stVector3D point);
+/// Test if an address lies in transit
+inline bool IsInTransit(const void* addr) { return (uint8_t*)addr >= (uint8_t*)CPA::Global::g_pTransitMemory && (uint8_t*)addr < (uint8_t*)CPA::Global::g_pTransitMemory + CPA::Global::g_lTransitMemorySize; }
 };
 
-#pragma mark - Runtime -
-
-#ifdef CPATOOLS_IMPLEMENTATION
-
-namespace memory {
-/// Size of the memory space
-size_type size = 0;
-/// The base address of the engine
-host_address_type baseAddress = nullptr;
-/// Flags: CPA_MEMORY_...
-unsigned flags = CPA_MEMORY_READONLY;
-
-struct __default_allocator {
-  static void* alloc(size_type sz) {
-    // Don't care if context not loaded
-    if (!baseAddress) return nullptr;
-    
-    if (flags & CPA_MEMORY_EXTERNAL) {
-      // Unknown memory allocation method
-      return nullptr;
-    } else {
-      
-    }
-  }
-  
-  static void dealloc(void *p) {
-    // Don't care if context not loaded
-    if (!baseAddress) return;
-    
-    if (flags & CPA_MEMORY_EXTERNAL) {
-      // Unknown memory allocation method
-    } else {
-      
-    }
-  }
-};
-
-allocator_function alloc = __default_allocator::alloc;
-deallocator_function dealloc = __default_allocator::dealloc;
-std::unordered_map<memory::target_address_type, userdata_store> userdata;
-
-}; /* memory */
-
-namespace global {
-
-pointer<stAlways> g_stAlways = nullptr;
-pointer<stEngineStructure> g_stEngineStructure = nullptr;
-pointer<stObjectType> g_stObjectTypes = nullptr;
-pointer<IPT::stInputStructure> g_stInputStructure = nullptr;
-pointer<RND::stRandom> g_stRandomStructure = nullptr;
-pointer<stSuperObject> p_stActualWorld = nullptr;
-pointer<stSuperObject> p_stDynamicWorld = nullptr;
-pointer<stSuperObject> p_stInactiveDynamicWorld = nullptr;
-pointer<stSuperObject> p_stFatherSector = nullptr;
-pointer<uint8> g_bGhostMode = nullptr;
-
-static void cacheObjectTypes();
-
-static bool isValidState() {
-  if (!g_stEngineStructure) return false;
-  return //!g_stEngineStructure->engineFrozen
-//  &&      g_stEngineStructure->mode != 5
-//  &&      g_stEngineStructure->mode != 6
-  /*&&*/      p_stActualWorld
-  &&      p_stDynamicWorld
-  &&      p_stInactiveDynamicWorld
-  &&      p_stFatherSector;
+namespace Memory {
+/// Load
+bool LoadFromBuffer(Memory::HostAddressType mem, Memory::SizeType size);
+///
 }
 
-/// Load context from live memory
-static bool loadMemory(memory::host_address_type mem, memory::size_type size) {
-  memory::baseAddress = mem;
-  memory::size = size;
-  
-  g_stEngineStructure = pointer<stSuperObject>         (PTR_EngineStructure);
-  g_stInputStructure  = pointer<IPT::stInputStructure> (PTR_InputStructure);
-  g_stRandomStructure = pointer<RND::stRandom>         (PTR_RandomStructure);
-  g_bGhostMode        = pointer<uint8>                 (PTR_GhostMode);
 
-  p_stActualWorld          = *doublepointer<stSuperObject>(PTR_ActualWorld);
-  p_stDynamicWorld         = *doublepointer<stSuperObject>(PTR_DynamicWorld);
-  p_stInactiveDynamicWorld = *doublepointer<stSuperObject>(PTR_InactiveDynamicWorld);
-  p_stFatherSector         = *doublepointer<stSuperObject>(PTR_FatherSector);
+} /* CPA */
 
-  if (isValidState()) {
-    pointer<uint8> fix = *doublepointer<uint8>(PTR_FixMemory);
-    pointer<uint8> lvl = *doublepointer<uint8>(PTR_LevelMemory);
+#undef GCN
+#undef PS1
+#undef PS2
+#undef PS3
+#undef XBOX
+#undef XBOX360
+#undef PC
+#undef MACOS
+#undef DC
+#undef NDS
+#undef N3DS
+#undef N64
 
-    #pragma mark FIX
-    fix += (32 + 4); // 4=identity matrix
-    fix += 4; // localizationStructure
-    uint32 levelNameCount = *(uint32*)fix;
-    fix += 4;
-    uint32 demoNameCount = *(uint32*)fix;
-    fix += 4;
-    fix += 12 * demoNameCount;
-    fix += 12 * demoNameCount;
-    fix += 30 * levelNameCount;
-    fix += 30 + 2; // First level name + padding
-    fix += 4 + 4; // Language count + language offset
-    uint32 fixTextureCount = *(uint32*)fix;
-
-    #pragma mark LVL
-    lvl += 4 * 4; // ?
-    lvl += 24; // text
-    lvl += 4 * 60; // ?
-    uint32 lvlTextureCount = *(uint32*)lvl;
-    lvl += 4;
-    lvl += (lvlTextureCount - fixTextureCount) * 4 * 2;
-    lvl += 4 * 5; // actualWorld (0), dynamicWorld (0), inactiveDynamicWorld (0), fatherSector (0), firstSubmapPosition
-    g_stAlways = lvl;
-    lvl += sizeof *g_stAlways;
-    g_stObjectTypes = lvl;
-
-    cacheObjectTypes();
-  }
-  
-  return true;
-}
-
-/// Load context from level file
-static bool loadLevel(const std::filesystem::path path, bool forceReload = false) {
-#if engine == R3
-  std::filesystem::path tmp = path;
-  tmp.replace_extension();
-  std::string basename = tmp.filename();
-  
-  using LevelPointerPair = std::pair<std::filesystem::path, std::filesystem::path>;
-  std::map<format::ptr::FileID, LevelPointerPair> gamedata;
-  
-  for (std::string s : { "", "_vb", "kf" }) {
-    std::filesystem::path lvl = path, ptr = path;
-    lvl.replace_extension("");
-    ptr.replace_extension("");
-    lvl.replace_filename(lvl.filename().string() + s + ".lvl");
-    ptr.replace_filename(ptr.filename().string() + s + ".ptr");
-    
-    if (!std::filesystem::exists(lvl)) {
-      //std::cerr << "failed to load " << lvl << "\n";
-      return false;
-    }
-    
-    if (!std::filesystem::exists(ptr)) {
-     // std::cerr << "failed to load " << ptr << "\n";
-      return false;
-    }
-    
-    LevelPointerPair p = std::make_pair(lvl, ptr);
-    if (s == "") gamedata[format::ptr::FileID_LVL] = p;
-    if (s == "_vb") gamedata[format::ptr::FileID_VB] = p;
-    if (s == "kf") gamedata[format::ptr::FileID_KF] = p;
-  }
-  
-  for (auto& p : gamedata) {
-    LevelPointerPair pair = p.second;
-    printf("%s\n", pair.second.string().c_str());
-    
-    memory::stream s(pair.second, memory::stream::mode::read);
-    format::ptr ptr(s);
-    
-    for (auto& pp : ptr.pointers) {
-      
-    }
-  }
-
-#endif
-  
-  std::ifstream fs(path, std::ios::in);
-  if (!fs.is_open())
-    return false;
-  
-  
-  
-  fs.close();
-  
-  return true;
-}
-
-static void setAllocator(memory::allocator_function alloc, memory::deallocator_function dealloc) {
-  memory::alloc = alloc;
-  memory::dealloc = dealloc;
-}
-  
-#pragma mark - Object type names
-
-struct objectNameCache {
-  std::vector<std::string> familyNames;
-  std::vector<std::string> modelNames;
-  std::vector<std::string> instanceNames;
-};
-
-std::map<std::string, objectNameCache> objectNameCacheTable;
-
-static void cacheObjectTypes() {
-  if (objectNameCacheTable.find(g_stEngineStructure->currentLevelName) == objectNameCacheTable.end()) {
-    objectNameCache& cache = objectNameCacheTable[g_stEngineStructure->currentLevelName];
-    g_stObjectTypes->family.forEach([&](stObjectTypeElement* e, void*) { cache.familyNames.push_back(std::string(e->name)); });
-    g_stObjectTypes->model.forEach([&](stObjectTypeElement* e, void*) { cache.modelNames.push_back(std::string(e->name)); });
-    g_stObjectTypes->instance.forEach([&](stObjectTypeElement* e, void*) { cache.instanceNames.push_back(std::string(e->name)); });
-  }
-}
-
-auto objectTypeNameLookup(int type, int idx) -> std::string {
-  if (objectNameCacheTable.find(g_stEngineStructure->currentLevelName) != objectNameCacheTable.end()) {
-    objectNameCache& cache = objectNameCacheTable[g_stEngineStructure->currentLevelName];
-    try {
-      if (type == ObjectType::Family) return cache.familyNames.at(idx);
-      if (type == ObjectType::Model) return cache.modelNames.at(idx);
-      if (type == ObjectType::Instance) return cache.instanceNames.at(idx);
-    } catch (std::out_of_range& e) {
-      return "Invalid name";
-    }
-  }
-  return "Invalid name";
-}
-  
-} /* global */
-
-#endif
-
-} /* cpa */
-
-#endif /* _CPATOOLS_HPP_ */
+#endif /* CPATOOLS_HH */
