@@ -83,34 +83,7 @@
 #include <limits>
 #include <functional>
 
-#include <any>
-#include <unordered_map>
-
 namespace CPA {
-
-struct _range {
-  struct iterator {
-    constexpr iterator(int64_t position, int64_t step = 0) : position(position), step(step) {}
-    constexpr auto operator*() const -> int64_t { return position; }
-    constexpr auto operator!=(const iterator& source) const -> bool { return step > 0 ? position < source.position : position > source.position; }
-    constexpr auto operator++() -> iterator& { position += step; return *this; }
-    
-  private:
-    int64_t position;
-    const int64_t step;
-  };
-  
-  constexpr auto begin() const -> iterator { return {origin, stride}; }
-  constexpr auto end() const -> iterator { return {target}; }
-  
-  int64_t origin;
-  int64_t target;
-  int64_t stride;
-};
-
-static constexpr inline auto range(int64_t sz) {
-  return _range { 0, sz, 1 };
-}
 
 #pragma mark - Memory -
 
@@ -223,16 +196,9 @@ private:
 template<typename T0, typename T1>
 struct Type {
   Type() = default;
+  Type(const T1 value) : data(bswap(*(T0*)&value)) { /* ... */ }
   
-  template<typename S>
-  inline Type(const S value) {
-    if constexpr (std::is_same<S, float>::value) {
-      data = bswap(*(T0*)&value);
-    }
-  }
-  
-  template<typename S>
-  inline Type& operator=(const S value) {
+  inline Type& operator=(const T1 value) {
     if (writable())
       data = bswap(*(T0*)&value);
     return *this;
@@ -243,26 +209,32 @@ struct Type {
     return *(T1*)(&tmp);
   }
   
-  /// Is the type bound to the address space of the target?
-  inline bool memoryBound() const { return MemoryBound(&data); }
-  /// Is the memory of the type writable?
-  inline bool writable() { return !memoryBound() ? true : !(Memory::MemoryFlags & CPA_MEMORY_READONLY); }
+  inline bool memoryBound() const {
+    return MemoryBound(&data);
+  }
   
-  inline T1 operator+(std::integral auto value) { return T1(data) + T1(value); }
-  inline T1 operator-(std::integral auto value) { return T1(data) - T1(value); }
-  inline T1 operator*(std::integral auto value) { return T1(data) * T1(value); }
-  inline T1 operator/(std::integral auto value) { return T1(data) / T1(value); }
+  inline bool writable() const {
+    if (!memoryBound())
+      return true;
+    else
+      return !(Memory::MemoryFlags & CPA_MEMORY_READONLY);
+  }
+  
+  inline T1 operator+(std::integral auto value) const { return T1(data) + value; }
+  inline T1 operator-(std::integral auto value) const { return T1(data) - value; }
+  inline T1 operator*(std::integral auto value) const { return T1(data) * value; }
+  inline T1 operator/(std::integral auto value) const { return T1(data) / value; }
   
   inline T1 operator+=(T1 other) { return *this = *this + other;  }
   inline T1 operator-=(T1 other) { return *this = *this - other;  }
   inline T1 operator*=(T1 other) { return *this = *this * other;  }
   inline T1 operator/=(T1 other) { return *this = *this / other;  }
+  inline T1 operator -(/*....*/) { return -T1(*this); }
   
-  inline auto operator++(int) -> Type { Type c = *this; ++(*this); return c; }
-  inline auto operator--(int) -> Type { Type c = *this; --(*this); return c; }
-  inline auto operator++() -> Type& { *this += 1; return *this; }
-  inline auto operator--() -> Type& { *this -= 1; return *this; }
-  inline auto operator-() -> T1 { Type v = *this; return -T1(v); }
+  inline Type& operator++() { *this += 1; return *this; }
+  inline Type& operator--() { *this -= 1; return *this; }
+  inline Type  operator++(int) { Type v = *this; ++(*this); return v; }
+  inline Type  operator--(int) { Type v = *this; --(*this); return v; }
   
   inline auto operator|=(T1 other) { *this = *this | other; return *this; }
   inline auto operator&=(T1 other) { *this = *this & other; return *this; }
@@ -271,14 +243,6 @@ struct Type {
   using UnderlyingType = T1;
 private:
   T0 data = 0;
-};
-
-/// A pointer exception
-struct BadPointer {
-  std::string what() { return msg; }
-  BadPointer(std::string s) : msg(s) { /* ... */ }
-private:
-  std::string msg;
 };
 
 /// A pointer
@@ -293,7 +257,6 @@ struct Pointer {
     ptr = other.ptr;
   }
   
-  
   inline Address pointee() const {
     return ptr;
   }
@@ -304,17 +267,17 @@ struct Pointer {
   }
   
   inline T* operator->() const {
-    if (!*this) throw BadPointer("bad pointer");
+    if (!*this) throw std::runtime_error("bad pointer");
     return pointee();
   }
   
   inline T& operator*() const {
-    if (!*this) throw BadPointer("bad pointer dereference");
+    if (!*this) throw std::runtime_error("bad pointer dereference");
     return *static_cast<T*>(pointee());
   }
   
   inline T& operator[](auto idx) {
-    if (!*this) throw BadPointer("array access into bad pointer");
+    if (!*this) throw std::runtime_error("array access into bad pointer");
     return *(static_cast<T*>(pointee()) + idx);
   }
   
@@ -435,7 +398,6 @@ using int64   = Memory::Type<int64_t, int64_t>;
 using uint64  = Memory::Type<uint64_t, uint64_t>;
 using float32 = Memory::Type<uint32_t, float>;
 
-using bad_pointer = Memory::BadPointer;
 template<typename T = Memory::Address> using pointer = Memory::Pointer<T>;
 template<typename T = Memory::Address> using doublepointer = pointer<pointer<T>>;
 template<Memory::SizeType Size = 0ull> using string = Memory::String<Size>;
@@ -458,15 +420,15 @@ struct stAnim3D;
 //}
 
 namespace MTH {
-template<unsigned N, typename T = float32> struct vector;
-using stVector2D = vector<2>;
-using stVector3D = vector<3>;
-using stVector4D = vector<4>;
+template<typename T, unsigned N> struct stVector;
+template<typename T, unsigned N> struct stMatrix;
 
-template<unsigned Rows, unsigned Columns, typename T> struct matrix;
-using stMatrix3D = matrix<3, 3, float32>;
+using stVector2D = stVector<float32, 2>;
+using stVector3D = stVector<float32, 3>;
+using stVector4D = stVector<float32, 4>;
+using stMatrix3D = stMatrix<float32, 3>;
 #if engine >= R3
-using stMatrix4D = matrix<4, 4, float32>;
+using stMatrix4D = stMatrix<float32, 4>;
 #endif
 };
 
@@ -670,177 +632,168 @@ using Index3D = uint16;
 
 #pragma mark - MTH -
 
-template<unsigned N, typename T>
-struct MTH::vector {
-  vector(float v) { for (auto i : range(N)) data[i] = v; }
-  template<typename... Args, std::enable_if_t<sizeof...(Args) == N && sizeof...(Args) != 1 && std::conjunction_v<std::is_convertible<Args, float>...>>* = nullptr>
-  vector(Args... args) : data { static_cast<float>(args)... } { /* ... */ }
-  template<unsigned N2> vector(std::array<float32, N2>& vec) { for (auto i : range(N)) data[i] = vec[i]; }
-  vector() { /* ... */ }
+template<typename T, unsigned N>
+struct MTH::stVector {
+  stVector() { /* ... */ }
   
-  template<typename S>
-  vector(const MTH::vector<N, S>& other) {
-    for (int i = 0; i < N; i++)
-      data[i] = other.data[i];
+  stVector(float v) {
+    for (int i=0; i<N; i++)
+      data[i] = v;
   }
   
-  inline auto dot(vector<N> v) const {
+  template<unsigned N2>
+  stVector(std::array<float32, N2>& vec) {
+    for (int i=0; i<N; i++)
+      data[i] = vec[i];
+  }
+  
+  template<typename... Args, std::enable_if_t<sizeof...(Args) == N && sizeof...(Args) != 1
+  && std::conjunction_v<std::is_convertible<Args, float>...>>* = nullptr>
+  stVector(Args... args) : data { static_cast<float>(args)... } { /* ... */ }
+  
+  template<typename S>
+  stVector(const MTH::stVector<S,N>& v) {
+    for (int i = 0; i < N; i++)
+      data[i] = v[i];
+  }
+  
+  inline float dot(const stVector& v) const {
     float s = 0.0f;
-    for (auto i : range(N))
+    for (int i = 0; i < N; i++)
       s += data[i] * v[i];
     return s;
   }
   
-  inline auto square() const {
-    return dot(*this);
+  inline float length() const {
+    return sqrt(dot(*this));
   }
   
-  inline auto length() const {
-    return sqrt(square());
-  }
-  
-  auto cross(vector<3> v) {
-    vector<3> result;
-    result.x() = data[1] * v.data[2] - data[2] * v.data[1];
-    result.y() = data[2] * v.data[0] - data[0] * v.data[2];
-    result.z() = data[0] * v.data[1] - data[1] * v.data[0];
+  inline stVector cross(const stVector& v) const {
+    stVector result;
+    result[0] = data[1] * v.data[2] - data[2] * v.data[1];
+    result[1] = data[2] * v.data[0] - data[0] * v.data[2];
+    result[2] = data[0] * v.data[1] - data[1] * v.data[0];
     return result;
   }
   
-  auto normalize() const {
-    vector result = *this;
-    if(length() == 0) return result;
+  inline stVector normalize() const {
+    stVector result = *this;
+    if (length() == 0.0f)
+      return *this;
+    
     float scale = 1.0f / length();
-    for(auto i : range(N)) result[i] *= scale;
+    for (int i = 0; i < N; i++)
+      result[i] *= scale;
+    
     return result;
   }
   
-  inline T& x() { return data[0]; }
-  inline T& y() { return data[1]; }
-  inline T& z() { return data[2]; }
-  inline T& w() { return data[3]; }
+  inline T& x() const { return *(T*)&data[0]; }
+  inline T& y() const { return *(T*)&data[1]; }
+  inline T& z() const { return *(T*)&data[2]; }
+  inline T& w() const { return *(T*)&data[3]; }
   inline T& operator[](int i) const { return *(T*)(&data[i]); }
-//  inline const T& operator[](int i) const { return data[i]; }
+  inline MTH::stVector2D xy() const { return *(MTH::stVector2D*)data.data(); }
+  inline MTH::stVector3D xyz() const { return *(MTH::stVector3D*)data.data(); }
   
-  inline vector<2> xy() { return vector<2>(x(), y()); }
-  inline vector<3> xyz() { return vector<3>(x(), y(), z()); }
+  stVector operator +(const stVector& v) const { stVector result; for (int i=0; i<N; ++i) result[i] = data[i] + v[i]; return result; }
+  stVector operator -(const stVector& v) const { stVector result; for (int i=0; i<N; ++i) result[i] = data[i] - v[i]; return result; }
+  stVector operator *(const stVector& v) const { stVector result; for (int i=0; i<N; ++i) result[i] = data[i] * v[i]; return result; }
+  stVector operator /(const stVector& v) const { stVector result; for (int i=0; i<N; ++i) result[i] = data[i] / v[i]; return result; }
+  stVector operator *(const auto scalar) const { stVector result; for (int i=0; i<N; ++i) result[i] = data[i] * scalar; return result; }
+  stVector operator /(const auto scalar) const { stVector result; for (int i=0; i<N; ++i) result[i] = data[i] / scalar; return result; }
+  stVector operator-() const { return *this * -1.0f; }
   
-  vector operator +(const vector& v) const { vector result; for (int i = 0; i < N; ++i) result[i] = data[i] + v[i]; return result; }
-  vector operator -(const vector& v) const { vector result; for (int i = 0; i < N; ++i) result[i] = data[i] - v[i]; return result; }
-  vector operator *(const vector& v) const { vector result; for (int i = 0; i < N; ++i) result[i] = data[i] * v[i]; return result; }
-  vector operator /(const vector& v) const { vector result; for (int i = 0; i < N; ++i) result[i] = data[i] / v[i]; return result; }
-  vector operator *(const auto&   s) const { vector result; for (int i = 0; i < N; ++i) result[i] = data[i] *    s; return result; }
-  vector operator /(const auto&   s) const { vector result; for (int i = 0; i < N; ++i) result[i] = data[i] /    s; return result; }
-  vector operator -() const         { vector result; for (int i = 0; i < N; ++i) result[i] =-data[i];        return result; }
+  stVector operator +=(const stVector& v) { *this = *this + v; }
+  stVector operator -=(const stVector& v) { *this = *this - v; }
+  stVector operator *=(const stVector& v) { *this = *this * v; }
+  stVector operator /=(const stVector& v) { *this = *this / v; }
   
-  bool operator >(vector v) { bool result = true; for (int i = 0; i < N; ++i) if (data[i] <= v[i]) result = false; return result; }
-  bool operator <(vector v) { bool result = true; for (int i = 0; i < N; ++i) if (data[i] >= v[i]) result = false; return result; }
-  bool operator>=(vector v) { bool result = true; for (int i = 0; i < N; ++i) if (data[i] <  v[i]) result = false; return result; }
-  bool operator<=(vector v) { bool result = true; for (int i = 0; i < N; ++i) if (data[i] >  v[i]) result = false; return result; }
-  bool operator==(vector v) { bool result = true; for (int i = 0; i < N; ++i) if (data[i] != v[i]) result = false; return result; }
-  bool operator!=(vector v) { return !(*this == v); }
   
-  auto operator+=(vector v) { for(auto i : range(N)) data[i] = data[i] + v[i]; }
-  auto operator-=(vector v) { for(auto i : range(N)) data[i] = data[i] - v[i]; }
-  auto operator*=(vector v) { for(auto i : range(N)) data[i] = data[i] * v[i]; }
-  auto operator/=(vector v) { for(auto i : range(N)) data[i] = data[i] / v[i]; }
+  bool operator >(const stVector& v) const { for (int i=0; i<N; ++i) if (data[i] <= v[i]) return false; return true; }
+  bool operator <(const stVector& v) const { for (int i=0; i<N; ++i) if (data[i] >= v[i]) return false; return true; }
+  bool operator>=(const stVector& v) const { for (int i=0; i<N; ++i) if (data[i] <  v[i]) return false; return true; }
+  bool operator<=(const stVector& v) const { for (int i=0; i<N; ++i) if (data[i] >  v[i]) return false; return true; }
+  bool operator==(const stVector& v) const { for (int i=0; i<N; ++i) if (data[i] != v[i]) return false; return true; }
+  bool operator!=(const stVector& v) const { return !(*this == v); }
   
   CPA_ALLOCATOR
-  
-//private:
+private:
   std::array<T, N> data;
 };
 
-template<unsigned Rows, unsigned Columns, typename T>
-struct MTH::matrix {
-  matrix() {
-    for (auto y : range(Rows)) {
-      for (auto x : range(Columns)) {
-        (*this)(x, y) = (y == x ? 1.0f : 0.0f);
-      }
-    }
+template<typename T, unsigned N>
+struct MTH::stMatrix {
+  constexpr stMatrix() {
+    for (int i=0; i<N; i++)
+      for (int j=0; j<N; j++)
+        (*this)(i,j) = (i == j ? 1.0f : 0.0f);
   }
   
   template<typename S>
-  matrix(const MTH::matrix<Rows, Columns, S>& other) {
-    for (int i = 0; i < Rows*Columns; i++)
-      m[i] = other.m[i];
+  stMatrix(const MTH::stMatrix<S,N>& other) {
+    for (int i = 0; i < N*N; i++)
+      m[i] = other[i];
   }
   
-  static constexpr matrix identity() {
-    matrix result;
-    for (auto y : range(Rows))
-      for (auto x : range(Columns))
-        result(x, y) = (y == x ? 1.0f : 0.0f);
-    return result;
+  constexpr static stMatrix identity() {
+    return stMatrix{};
   }
   
   inline T& operator()(auto row, auto col) const {
-    return *(T*)&m[col + row * Columns];
+    return *(T*)&m[col + row * N];
   }
   
-  inline auto operator[](auto index) -> T& {
-    return m[index];
+  inline T& operator[](auto index) const {
+    return *(T*)&m[index];
   }
   
-  template <unsigned R, unsigned C>
-  auto operator*(matrix<R, C, T> src) const {
-    static_assert(Columns == C);
-    matrix<Rows, Columns, T> result;
-    for (auto y : range(Rows)) {
-      for (auto x : range(C)) {
-        T sum = 0.0f;
-        for (auto z : range(Columns)) {
+  stMatrix operator*(const stMatrix& src) const {
+    stMatrix result;
+    for (int y=0; y<N; y++)
+      for (int x=0; x<N; x++) {
+        double sum = 0.0f;
+        for (int z=0; z<N; z++)
           sum += src(y, z) * (*this)(z, x);
-        }
         result(y,x) = sum;
       }
-    }
     return result;
   }
   
-  template <unsigned R, unsigned C>
-  auto operator*=(matrix<R, C, T> m) {
+  stMatrix& operator*=(const stMatrix& m) const {
     return (*this = *this * m);
   }
   
-  MTH::stVector4D operator*(MTH::stVector4D v) {
+  MTH::stVector4D operator*(const MTH::stVector4D& v) const {
     MTH::stVector4D result;
-    for (auto y : range(Rows)) {
+    for (int y=0; y<N; y++) {
       result[y] = 0.0f;
-      for (auto x : range(Columns)) {
+      for (int x=0; x<N; x++)
         result[y] += (*this)(x,y) * v[x];
-      }
     }
     return result;
   }
   
-  MTH::stVector4D operator*(MTH::stVector3D v) {
+  MTH::stVector4D operator*(const MTH::stVector3D& v) const {
     return ((*this) * MTH::stVector4D(v.x(), v.y(), v.z(), 1.0f));
   }
   
-  inline bool operator==(matrix other) {
-    bool eq = true;
-    for (auto y : range(Rows))
-      for (auto x : range(Columns))
-        if (float((*this)(x,y)) != float(other(x,y))) eq = false;
-    return eq;
-  }
-  
-  static auto makeTranslation(MTH::stVector3D p) {
-    matrix result = identity();
-    for (auto i : range(3)) result(Rows-1,i) = p[i];
+  constexpr static stMatrix makeTranslation(const MTH::stVector3D& P) {
+    stMatrix result = identity();
+    for (int i=0; i<3; i++)
+      result(N-1,i) = P[i];
     return result;
   }
   
-  static auto makeScale(MTH::stVector3D p) {
-    matrix result = identity();
-    for (auto i : range(3)) result(i,i) = p[i];
+  constexpr static stMatrix makeScale(const MTH::stVector3D& S) {
+    stMatrix result = identity();
+    for (int i=0; i<3; i++)
+      result(i,i) = S[i];
     return result;
   }
   
-  static matrix MakeRotationX(float radians) {
-    matrix result = identity();
+  constexpr static stMatrix makeRotationX(double radians) {
+    stMatrix result = identity();
     result(1,1) = std::cos(radians);
     result(1,2) = std::sin(radians);
     result(2,1) = -std::sin(radians);
@@ -848,8 +801,8 @@ struct MTH::matrix {
     return result;
   }
   
-  static matrix MakeRotationY(float radians) {
-    matrix result = identity();
+  constexpr static stMatrix makeRotationY(double radians) {
+    stMatrix result = identity();
     result(0,0) = std::cos(radians);
     result(0,2) = -std::sin(radians);
     result(2,0) = std::sin(radians);
@@ -857,8 +810,8 @@ struct MTH::matrix {
     return result;
   }
   
-  static matrix MakeRotationZ(float radians) {
-    matrix result = identity();
+  constexpr static stMatrix makeRotationZ(double radians) {
+    stMatrix result = identity();
     result(0,0) = std::cos(radians);
     result(0,1) = std::sin(radians);
     result(1,0) = -std::sin(radians);
@@ -866,9 +819,9 @@ struct MTH::matrix {
     return result;
   }
   
-  static auto MakePerspective(float fovY, float aspect, float near, float far) {
+  constexpr static MTH::stMatrix4D makePerspective(double fovY, double aspect, double near, double far) {
     float ct = 1.0f / std::tan(fovY / 2.0f);
-    matrix<4,4,T> result = identity();
+    stMatrix4D result = identity();
     result(0,0) = ct / aspect;
     result(1,1) = ct;
     result(2,2) = (far + near) / (near - far);
@@ -878,16 +831,19 @@ struct MTH::matrix {
     return result;
   }
   
-  static auto MakeLookAt(MTH::stVector3D eye, MTH::stVector3D center, MTH::stVector3D up) {
-    MTH::stVector3D n = (eye - center).normalize();
-    MTH::stVector3D u = up.cross(n).normalize();
-    MTH::stVector3D v = n.cross(u);
-    
-    float nnx = (-u).dot(eye);
-    float nny = (-v).dot(eye);
-    float nnz = (-n).dot(eye);
-    
-    matrix<4,4,T> result;
+  constexpr static MTH::stMatrix4D makeLookAt(const MTH::stVector3D& eye,
+                                              const MTH::stVector3D& center,
+                                              const MTH::stVector3D& up)
+  {
+    const MTH::stVector3D& n = (eye - center).normalize();
+    const MTH::stVector3D& u = up.cross(n).normalize();
+    const MTH::stVector3D& v = n.cross(u);
+  
+    double const nnx = (-u).dot(eye);
+    double const nny = (-v).dot(eye);
+    double const nnz = (-n).dot(eye);
+  
+    stMatrix4D result = identity();
     result(0,0) = u.x();
     result(0,1) = v.x();
     result(0,2) = n.x();
@@ -904,41 +860,37 @@ struct MTH::matrix {
     result(3,1) = nny;
     result(3,2) = nnz;
     result(3,3) = 1.0f;
-    
+  
     return result;
   }
   
-  auto transpose() -> matrix {
-    matrix<Rows, Columns, T> result;
-    for (auto y : range(Rows)) {
-      for (auto x : range(Columns)) {
-        result(x,y) = (*this)(y,x);
-      }
-    }
+  stMatrix transpose() const {
+    stMatrix result;
+    for (int j=0; j<N; j++)
+      for (int i=0; i<N; i++)
+        result(i,j) = (*this)(j,i);
     return result;
   }
   
-  matrix<4,4,T> inverse() {
-    matrix<4,4,T> result;
+  MTH::stMatrix4D inverse() const {
+    double const s0 = (*this)(0,0) * (*this)(1,1) - (*this)(1,0) * (*this)(0,1);
+    double const s1 = (*this)(0,0) * (*this)(1,2) - (*this)(1,0) * (*this)(0,2);
+    double const s2 = (*this)(0,0) * (*this)(1,3) - (*this)(1,0) * (*this)(0,3);
+    double const s3 = (*this)(0,1) * (*this)(1,2) - (*this)(1,1) * (*this)(0,2);
+    double const s4 = (*this)(0,1) * (*this)(1,3) - (*this)(1,1) * (*this)(0,3);
+    double const s5 = (*this)(0,2) * (*this)(1,3) - (*this)(1,2) * (*this)(0,3);
+    double const c5 = (*this)(2,2) * (*this)(3,3) - (*this)(3,2) * (*this)(2,3);
+    double const c4 = (*this)(2,1) * (*this)(3,3) - (*this)(3,1) * (*this)(2,3);
+    double const c3 = (*this)(2,1) * (*this)(3,2) - (*this)(3,1) * (*this)(2,2);
+    double const c2 = (*this)(2,0) * (*this)(3,3) - (*this)(3,0) * (*this)(2,3);
+    double const c1 = (*this)(2,0) * (*this)(3,2) - (*this)(3,0) * (*this)(2,2);
+    double const c0 = (*this)(2,0) * (*this)(3,1) - (*this)(3,0) * (*this)(2,1);
     
-    float const s0 = (*this)(0,0) * (*this)(1,1) - (*this)(1,0) * (*this)(0,1);
-    float const s1 = (*this)(0,0) * (*this)(1,2) - (*this)(1,0) * (*this)(0,2);
-    float const s2 = (*this)(0,0) * (*this)(1,3) - (*this)(1,0) * (*this)(0,3);
-    float const s3 = (*this)(0,1) * (*this)(1,2) - (*this)(1,1) * (*this)(0,2);
-    float const s4 = (*this)(0,1) * (*this)(1,3) - (*this)(1,1) * (*this)(0,3);
-    float const s5 = (*this)(0,2) * (*this)(1,3) - (*this)(1,2) * (*this)(0,3);
-    float const c5 = (*this)(2,2) * (*this)(3,3) - (*this)(3,2) * (*this)(2,3);
-    float const c4 = (*this)(2,1) * (*this)(3,3) - (*this)(3,1) * (*this)(2,3);
-    float const c3 = (*this)(2,1) * (*this)(3,2) - (*this)(3,1) * (*this)(2,2);
-    float const c2 = (*this)(2,0) * (*this)(3,3) - (*this)(3,0) * (*this)(2,3);
-    float const c1 = (*this)(2,0) * (*this)(3,2) - (*this)(3,0) * (*this)(2,2);
-    float const c0 = (*this)(2,0) * (*this)(3,1) - (*this)(3,0) * (*this)(2,1);
+    double const det = s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0;
+    double const invdet = 1.0f / det;
+    assert(det != 0.0f);
     
-    float const det = (s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0);
-    float const invdet = 1.0f / det;
-    
-    assert(det != 0.0f); // Non-invertible
-    
+    MTH::stMatrix4D result;
     result(0,0) = ( (*this)(1,1) * c5 - (*this)(1,2) * c4 + (*this)(1,3) * c3) * invdet;
     result(0,1) = (-(*this)(0,1) * c5 + (*this)(0,2) * c4 - (*this)(0,3) * c3) * invdet;
     result(0,2) = ( (*this)(3,1) * s5 - (*this)(3,2) * s4 + (*this)(3,3) * s3) * invdet;
@@ -959,18 +911,13 @@ struct MTH::matrix {
     return result;
   }
   
-  MTH::stVector3D& translation() {
-    return *(MTH::stVector3D*)&(*this)(Rows-1,0);
+  MTH::stVector3D& translation() const {
+    return *(MTH::stVector3D*)&(*this)(N-1,0);
   }
   
-//  inline auto scale(bool ref = false) {
-//    if (ref) return vector<3, float32*>(&(*this)(0,0), &(*this)(1,1), &(*this)(2,2));
-//    return MTH::stVector3D((*this)(0,0), (*this)(1,1), (*this)(2,2));
-//  }
-  
   CPA_ALLOCATOR
-  
-  std::array<T, Rows * Columns> m;
+private:
+  std::array<T, N*N> m;
 };
 
 #pragma mark - Containers
